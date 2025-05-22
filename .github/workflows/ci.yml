@@ -22,11 +22,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Assuming requirements.txt has 'dvc' and 'dvc-gs' listed separately,
-          # or 'dvc[gcs]' which should be preferred.
-          # If installing dvc and dvc-gs separately here:
-          # pip install dvc dvc-gs # Add other deps from requirements.txt
-          pip install -r requirements.txt # Ensure requirements.txt is updated
+          # This assumes requirements.txt has dvc and dvc-gs (or dvc[gcs])
+          # and all other necessary packages for this job.
+          pip install -r requirements.txt
 
       - name: Set up DVC and Pull Data from GCS
         run: |
@@ -71,19 +69,17 @@ jobs:
       - name: Set up Python for Docker Build Job
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.9' # Consistent Python version
 
       - name: Set up DVC and Pull Models for Docker Build
         run: |
           python -m pip install --upgrade pip
           echo "Attempting to install dvc and dvc-gs separately using Python $(python --version)..."
-          # Install DVC core and dvc-gs separately.
-          # Ensure versions are compatible if you pin them.
-          pip install dvc dvc-gs # Or specific versions like dvc==3.59.2 dvc-gs==X.Y.Z
+          # Using your specified method of installing dvc and dvc-gs separately
+          pip install dvc dvc-gs # Ensure these versions are compatible
           echo "Finished pip install dvc and dvc-gs."
           
           echo "Verifying dvc_gs import..."
-          # The module DVC tries to import is typically 'dvc_gs' (underscore)
           python -c "import dvc_gs; print('dvc_gs imported successfully! Version:', getattr(dvc_gs, '__version__', 'unknown'))" || \
             (echo "Failed to import dvc_gs. Listing installed packages:" && pip list && exit 1)
 
@@ -95,27 +91,42 @@ jobs:
           dvc version
 
           echo "--- Running dvc doctor (to check cache setup) ---"
-          dvc doctor || echo "dvc doctor reported issues"
+          dvc doctor || echo "dvc doctor reported issues but proceeding..."
           
           echo "Ensuring models directory exists for DVC operations..."
           mkdir -p models 
 
           echo "--- Attempting dvc fetch for specific model files ---"
+          set -e # Exit immediately if dvc fetch fails
           dvc fetch models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
+          set +e # Revert to default error handling
+          echo "--- dvc fetch command completed ---"
           
           echo "--- Listing DVC cache contents after fetch ---"
+          echo "Checking for general cache structure:"
           ls -l .dvc/cache/files/md5/ || echo "MD5 cache directory does not exist or is empty."
-          find .dvc/cache -type f -print0 | xargs -0 ls -l | head -n 10 || echo "Cache is empty or find command failed."
+          echo "Number of files in DVC cache:"
+          find .dvc/cache -type f | wc -l || echo "Could not count files in DVC cache."
+          echo "Listing some files in DVC cache (if any):"
+          find .dvc/cache -type f -print0 | xargs -0 ls -l | head -n 10 || echo "DVC cache is empty or find command failed."
 
           echo "--- Attempting dvc checkout for specific model files ---"
+          set -e # Exit immediately if dvc checkout fails
           dvc checkout models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
+          set +e # Revert to default error handling
+          echo "--- dvc checkout command completed ---"
 
           echo "Models pull process finished. Listing models directory:"
           ls -lh models/
+          # Verify files exist in workspace and are not empty
+          if [ -s models/sentiment_model.joblib ] && [ -s models/tfidf_vectorizer.joblib ]; then
+            echo "Model files successfully checked out to workspace and are not empty."
+          else
+            echo "ERROR: Model files were not checked out correctly to workspace or are empty."
+            exit 1 # Fail the step if models are not properly in workspace
+          fi
+          
           rm -f gcp_creds_ci.json
-
-      # ... (Rest of Docker build steps: Buildx, Login, Get Date, Build and Push, Image Digest) ...
-      # (Make sure these steps are identical to the last working version you had for them)
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
