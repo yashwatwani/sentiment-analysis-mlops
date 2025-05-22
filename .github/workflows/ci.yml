@@ -1,0 +1,112 @@
+name: MLOps CI Pipeline
+
+on:
+  push:
+    branches: [ main ] # Runs on pushes to the main branch
+  pull_request:
+    branches: [ main ] # Runs on pull requests targeting the main branch
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        # We need to fetch all history for DVC to work correctly if comparing versions
+        # For this simple case where we just run `dvc repro` on current state, it might not be strictly needed.
+        # with:
+        #   fetch-depth: 0 
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.9' # Match our project's Python version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up DVC
+        # This step would typically configure DVC to use a remote accessible by CI.
+        # For now, we'll just ensure DVC is usable. Our local remote won't be accessible.
+        # If using a cloud remote (e.g., S3), you'd set credentials here:
+        # env:
+        #   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        #   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          echo "DVC setup step. In a real scenario, configure remote access here."
+          # Example for S3 (if you had an S3 remote configured in .dvc/config):
+          # dvc remote modify myremote endpointurl <S3_ENDPOINT_URL> # if not default AWS
+          # dvc remote modify myremote region <S3_REGION>
+          # dvc pull data/raw/reviews.csv # This would pull the data if remote was accessible
+          echo "Skipping dvc pull for now due to local remote."
+          # To make 'dvc repro' work without a pull, the raw data file would need to be
+          # present. For this exercise, 'dvc repro' will likely fail at finding reviews.csv
+          # unless we commit it (which is not DVC best practice for large files)
+          # or if the placeholder `reviews.csv` created by `dvc add` (if any) is sufficient
+          # for `dvc repro` to check status, even if it can't verify content hash without cache.
+
+          # Let's ensure the data/raw directory exists to avoid one type of error.
+          mkdir -p data/raw
+          # If reviews.csv is small and we *temporarily* commit it for CI demo:
+          # git checkout -- data/raw/reviews.csv # (Assuming it was committed)
+          # This is a HACK for demo purposes if the file is small.
+          # DO NOT DO THIS FOR LARGE, REAL DATA. USE A PROPER DVC REMOTE.
+
+          # For now, let's just proceed. `dvc repro` will show us what happens.
+          # The `reviews.csv` file linked by DVC in your working directory won't be
+          # present after a fresh git checkout in CI unless you commit it or `dvc pull` works.
+          # Since DVC replaced `data/raw/reviews.csv` with a placeholder/link,
+          # and that placeholder is what Git tracks, `dvc repro` might fail
+          # when it tries to access the actual content of `data/raw/reviews.csv`.
+
+      - name: Reproduce DVC pipeline
+        run: |
+          echo "Attempting to reproduce DVC pipeline..."
+          # This will likely fail if data/raw/reviews.csv is not fully available
+          # (i.e., just the DVC-managed placeholder is there, not the actual content from cache/remote)
+          dvc repro
+          echo "DVC pipeline reproduction attempt finished."
+          # If it fails, the CI job will fail, which is good - it tells us something is wrong.
+
+      - name: Lint with Flake8 (Placeholder)
+        run: |
+          # pip install flake8 # If not in requirements.txt
+          echo "Skipping linting for now."
+          # flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          # flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name. Test with Pytest (Placeholder)
+        run: |
+          # pip install pytest # If not in requirements.txt
+          echo "Skipping tests for now."
+          # pytest tests/
+
+# Future Job: Build Docker Image (we'll add this in a later step)
+#   build_docker:
+#     needs: build_and_test # Depends on the previous job succeeding
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
+#
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v2
+#
+#       - name: Login to Docker Hub (or other registry)
+#         if: github.event_name != 'pull_request' # Don't push on PRs from forks for security
+#         uses: docker/login-action@v2
+#         with:
+#           username: ${{ secrets.DOCKERHUB_USERNAME }}
+#           password: ${{ secrets.DOCKERHUB_TOKEN }}
+#
+#       - name: Build and push Docker image
+#         uses: docker/build-push-action@v4
+#         with:
+#           context: .
+#           file: ./Dockerfile
+#           push: ${{ github.event_name != 'pull_request' }} # Push if not a PR from fork
+#           tags: yourdockerhubusername/sentiment-analysis-api:latest # Replace with your details
