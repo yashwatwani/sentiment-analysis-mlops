@@ -94,5 +94,19 @@ mlruns/
 .vscode/
 *.DS_Store
 
-data/
+data/raw/*
+data/processed/*
+models/*
+
+# Un-ignore .dvc files and .gitignore files within these directories
+!data/raw/*.dvc
+!data/raw/.gitignore
+!data/processed/*.dvc
+!data/processed/.gitignore
+!models/*.dvc
+!models/.gitignore
+
+# Also, ensure the DVC cache itself is ignored (DVC usually adds this)
+.dvc/cache
+.dvc/tmp
 sentiment-analysis-mlops/
