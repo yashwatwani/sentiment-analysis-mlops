@@ -66,7 +66,7 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    global model, vectorizer  # Access the globally loaded model/vectorizer
+    # global model, vectorizer  # Access the globally loaded model/vectorizer
 
     if model is None or vectorizer is None:
         return jsonify({
