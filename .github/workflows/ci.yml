@@ -2,14 +2,14 @@ name: MLOps CI Pipeline
 
 on:
   push:
-    branches: [ main ] # Runs on pushes to the main branch
+    branches: [ main ]
   pull_request:
-    branches: [ main ] # Runs on pull requests targeting the main branch
-  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -18,15 +18,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9' # Match our project's Python version
+          python-version: '3.9'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt # This will install flake8 and pytest
 
       - name: Set up DVC and Pull Data from GCS
-        # REMOVED THE env: BLOCK HERE IF GCP_PROJECT_ID ISN'T USED
         run: |
           echo "Authenticating to Google Cloud..."
           echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
@@ -46,48 +45,41 @@ jobs:
       - name: Reproduce DVC pipeline
         run: |
           echo "Attempting to reproduce DVC pipeline..."
-          dvc repro -v # -v for verbose output
+          dvc repro -v
           echo "DVC pipeline reproduction attempt finished."
 
-      - name: Lint with Flake8 (Placeholder)
-        # To enable:
-        # 1. Add 'flake8' to requirements.txt
-        # 2. pip install -r requirements.txt locally and commit requirements.txt
-        # 3. Uncomment the flake8 command below.
+      - name: Lint with Flake8
         run: |
-          echo "Linting step (currently placeholder)..."
-          # flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          # flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          echo "Running Flake8 linter on src/ directory..."
+          flake8 src/
+          # You could also add other directories like tests/ if desired:
+          # echo "Running Flake8 linter on tests/ directory..."
+          # flake8 tests/
 
-      - name: Run Tests with Pytest (Placeholder)
-        # To enable:
-        # 1. Add 'pytest' to requirements.txt
-        # 2. Create test files in the 'tests/' directory (e.g., tests/test_preprocess.py)
-        # 3. pip install -r requirements.txt locally and commit requirements.txt
-        # 4. Uncomment the pytest command below.
+      - name: Run Tests with Pytest
         run: |
-          echo "Testing step (currently placeholder)..."
-          # pytest tests/ -v
+          echo "Running Pytest..."
+          pytest tests/ -v
 
     # --- Future Job: Build Docker Image (can be added later) ---
     # build_docker:
-    #   needs: build_and_test # Depends on the previous job succeeding
+    #   needs: build_and_test
     #   runs-on: ubuntu-latest
     #   steps:
     #     - name: Checkout repository
     #       uses: actions/checkout@v4
     #
     #     - name: Set up DVC and Pull Models for Docker Build
-    #       env:
-    #         # GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
     #       run: |
     #         echo "Authenticating to Google Cloud for Docker build..."
     #         echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
     #         export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json
-    #         pip install dvc[gcs] # Ensure dvc is available
+    #         # Ensure dvc is available if not installed globally in the runner image for some reason
+    #         # pip install dvc[gcs] # Usually covered by requirements.txt in previous job or image layer
     #         echo "Pulling models for Docker build..."
+    #         # Ensure 'models/' directory exists for dvc pull to place files into
+    #         mkdir -p models
     #         dvc pull models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
-    #         # Or: dvc pull -R # to pull all outputs of dvc.yaml if they are DVC tracked
     #         echo "Models pulled."
     #         ls -lh models/
     #         rm -f gcp_creds_ci.json
@@ -99,12 +91,9 @@ jobs:
     #       if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     #       uses: docker/login-action@v3
     #       with:
-    #         registry: ghcr.io # For GitHub Container Registry
+    #         registry: ghcr.io
     #         username: ${{ github.actor }}
     #         password: ${{ secrets.GITHUB_TOKEN }}
-    #         # For Docker Hub:
-    #         # username: ${{ secrets.DOCKERHUB_USERNAME }}
-    #         # password: ${{ secrets.DOCKERHUB_TOKEN }}
     #
     #     - name: Build and push Docker image
     #       id: docker_build
@@ -113,8 +102,7 @@ jobs:
     #         context: .
     #         file: ./Dockerfile
     #         push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
-    #         tags: ghcr.io/${{ github.repository_owner }}/sentiment-analysis-api:latest # For GHCR
-    #         # For Docker Hub: yourdockerhubusername/sentiment-analysis-api:latest
+    #         tags: ghcr.io/${{ github.repository_owner }}/sentiment-analysis-api:latest
     #         labels: |
     #           org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
     #           org.opencontainers.image.revision=${{ github.sha }}
