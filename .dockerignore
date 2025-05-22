@@ -1,0 +1,45 @@
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# DVC files (we copy models explicitly, don't need the DVC infra in the image for this approach)
+.dvc/
+.dvcignore
+dvc.lock
+dvc.yaml
+# We don't want to copy the raw data if it's large and not needed by the API
+data/raw/
+data/processed/ 
+# models/ # We DO want to copy models, so don't list it here if using COPY models/
+          # If models were pulled via a dvc command inside Dockerfile, then we could ignore models/ here.
+
+# Python virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# MLflow local tracking data
+mlruns/
+
+# Notebooks (if any, and not needed in the image)
+notebooks/
+.ipynb_checkpoints/
+
+# IDE specific files
+.idea/
+.vscode/
+*.DS_Store
+
+# Docs
+docs.md
+README.md
+
+# Local DVC remote (if you created it within the project, which is not recommended)
+sentiment-analysis-dvc-remote/ 
