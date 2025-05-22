@@ -145,6 +145,7 @@ jobs:
             org.opencontainers.image.created=${{ steps.date.outputs.DATE }}
 
       - name: Image Digest
-        run: echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}"
+        run: |
+          echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}"
 
 # Ensure a final newline character below this line
