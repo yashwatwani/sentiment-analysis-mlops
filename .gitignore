@@ -93,3 +93,6 @@ mlruns/
 .idea/
 .vscode/
 *.DS_Store
+
+data/
+sentiment-analysis-mlops/
