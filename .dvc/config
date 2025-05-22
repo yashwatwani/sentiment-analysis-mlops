@@ -1,5 +1,7 @@
 [core]
     autostage = true
-    remote = mylocalremote
+    remote = mycloudremote
 ['remote "mylocalremote"']
     url = ../../sentiment-analysis-dvc-remote
+['remote "mycloudremote"']
+    url = gs://minedvcstore-1/dvc-store

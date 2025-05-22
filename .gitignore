@@ -110,3 +110,8 @@ models/*
 .dvc/cache
 .dvc/tmp
 sentiment-analysis-mlops/
+
+mlruns/
+
+gcp-creds.json
+gcp-creds2.json
