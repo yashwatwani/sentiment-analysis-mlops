@@ -7,3 +7,4 @@ matplotlib
 seaborn
 Flask
 flake8  # Add this line
+pytest
