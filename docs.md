@@ -475,3 +475,43 @@ Every good project starts with setting up version control and a basic structure.
     *   Anticipated a potential failure in the `dvc repro` step due to the unavailability of the actual raw data file content on the CI runner (as the DVC remote is local to the development machine). This failure is educational, highlighting the need for a CI-accessible DVC remote for full pipeline reproducibility.
 
 **Outcome:** An initial GitHub Actions CI workflow is in place. It automates environment setup and attempts to reproduce the DVC pipeline. This step highlights the challenges and requirements for integrating DVC with CI, particularly regarding remote data access. Future iterations will involve configuring a cloud-based DVC remote and adding more comprehensive testing and build steps (like Docker image building).
+
+----------
+
+## Step 8: Adding Linters and Basic Tests to CI
+
+**Goal:** Enhance the CI pipeline by incorporating automated code linting with Flake8 and unit testing with Pytest to improve code quality and catch errors early.
+
+**Key Actions & Files:**
+1.  **Linting Setup (Flake8):**
+    *   Added `flake8` to `requirements.txt`.
+    *   Installed dependencies locally (`pip install -r requirements.txt`).
+    *   Created a `.flake8` configuration file in the project root to customize linting rules (e.g., `max-line-length = 119`, ignored errors `E203, W503`).
+    *   Ran `flake8 src/` locally to identify and fix all initial linting issues in `src/app.py`, `src/preprocess.py`, and `src/train.py`.
+    *   Updated `.github/workflows/ci.yml`:
+        *   The "Install dependencies" step now also installs `flake8`.
+        *   Modified the "Lint with Flake8" step to execute `flake8 src/`. The CI job will fail if `flake8` reports any errors.
+
+2.  **Testing Setup (Pytest):**
+    *   Added `pytest` to `requirements.txt`.
+    *   Installed dependencies locally.
+    *   Created a test file `tests/test_preprocess.py`.
+    *   Wrote unit tests for the `preprocess_text` function using Pytest's `@pytest.mark.parametrize` for multiple test cases, covering aspects like punctuation, case, stopwords, and empty strings.
+    *   Ran `pytest tests/ -v` locally to ensure all tests pass.
+    *   Updated `.github/workflows/ci.yml`:
+        *   The "Install dependencies" step now also installs `pytest`.
+        *   Modified the "Run Tests with Pytest" step to execute `pytest tests/ -v`. The CI job will fail if any tests fail.
+
+3.  **CI Workflow Update:**
+    *   The `Install dependencies` step in `ci.yml` now ensures `flake8` and `pytest` are available on the CI runner.
+    *   The linting and testing steps are active and positioned after the DVC pipeline reproduction.
+
+4.  **Git Commits:**
+    *   Committed changes to `requirements.txt`, `tests/test_preprocess.py`, `.github/workflows/ci.yml`, `.flake8`, and source files (`src/*.py`) that were updated to fix linting issues.
+
+5.  **Workflow Execution and Validation:**
+    *   Pushed changes to GitHub, triggering the Actions workflow.
+    *   Observed the workflow run in the "Actions" tab.
+    *   Verified that the linting (`flake8 src/`) and testing (`pytest tests/ -v`) steps execute and pass in the CI environment.
+
+**Outcome:** The CI pipeline is now more comprehensive. It not only checks for DVC pipeline reproducibility but also enforces code style consistency through linting and validates core functionality through automated unit tests. This leads to higher code quality, earlier bug detection, and a more reliable development process.
