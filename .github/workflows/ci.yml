@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-    steps:
+    steps: # Each item under steps must start with a hyphen '-'
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -90,14 +90,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get current date # NEW STEP TO GET DATE FOR LABEL
-        id: date
-        run: echo "DATE=$(date --iso-8601=seconds)" >> $GITHUB_OUTPUT
+      - name: Get current date # STEP STARTS WITH '-'
+        id: date               # Indented under the step
+        run: echo "DATE=$(date --iso-8601=seconds)" >> $GITHUB_OUTPUT # Indented under the step
 
-      - name: Build and push Docker image to GHCR
-        id: docker_build
-        uses: docker/build-push-action@v5
-        with:
+      - name: Build and push Docker image to GHCR # STEP STARTS WITH '-'
+        id: docker_build                          # Indented under the step
+        uses: docker/build-push-action@v5         # Indented under the step
+        with:                                     # Indented under the step
           context: .
           file: ./Dockerfile
           push: true
@@ -105,7 +105,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ steps.date.outputs.DATE }} # CORRECTED LINE
+            org.opencontainers.image.created=${{ steps.date.outputs.DATE }}
 
-      - name: Image Digest
-        run: echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}"
+      - name: Image Digest # STEP STARTS WITH '-'
+        run: echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}" # Indented
