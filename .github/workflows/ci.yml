@@ -22,8 +22,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # This assumes requirements.txt has dvc and dvc-gs (or dvc[gcs])
-          # and all other necessary packages for this job.
           pip install -r requirements.txt
 
       - name: Set up DVC and Pull Data from GCS
@@ -69,15 +67,14 @@ jobs:
       - name: Set up Python for Docker Build Job
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9' # Consistent Python version
+          python-version: '3.9'
 
       - name: Set up DVC and Pull Models for Docker Build
         run: |
           python -m pip install --upgrade pip
-          echo "Attempting to install dvc and dvc-gs separately using Python $(python --version)..."
-          # Using your specified method of installing dvc and dvc-gs separately
-          pip install dvc dvc-gs # Ensure these versions are compatible
-          echo "Finished pip install dvc and dvc-gs."
+          # Assuming requirements.txt correctly contains "dvc[gcs]"
+          pip install -r requirements.txt 
+          echo "Finished installing dependencies from requirements.txt."
           
           echo "Verifying dvc_gs import..."
           python -c "import dvc_gs; print('dvc_gs imported successfully! Version:', getattr(dvc_gs, '__version__', 'unknown'))" || \
@@ -90,25 +87,33 @@ jobs:
           echo "--- Running dvc version ---"
           dvc version
 
-          echo "--- Running dvc doctor (to check cache setup) ---"
+          echo "--- Running dvc doctor ---"
           dvc doctor || echo "dvc doctor reported issues but proceeding..."
           
           echo "Ensuring models directory exists for DVC operations..."
-          mkdir -p models 
+          mkdir -p models
+
+          echo "--- Checking status of remote 'mygcsremote' for specific model files ---"
+          # This will tell us what DVC thinks the state of these files is on the remote vs. local
+          # It should indicate that the local cache is missing and that the files exist on the remote.
+          dvc status -r mygcsremote models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v --show-json || \
+            echo "dvc status -r mygcsremote failed or showed unexpected status."
 
           echo "--- Attempting dvc fetch for specific model files ---"
-          set -e # Exit immediately if dvc fetch fails
-          dvc fetch models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
-          set +e # Revert to default error handling
+          # Use --force to ensure it tries to download
+          # Commenting out set -e temporarily to see cache listing even if fetch has issues
+          # set -e 
+          dvc fetch models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v --force 
+          # set +e
           echo "--- dvc fetch command completed ---"
           
           echo "--- Listing DVC cache contents after fetch ---"
           echo "Checking for general cache structure:"
-          ls -l .dvc/cache/files/md5/ || echo "MD5 cache directory does not exist or is empty."
+          ls -la .dvc/cache/files/md5/ || echo "MD5 cache directory does not exist or is empty."
           echo "Number of files in DVC cache:"
-          find .dvc/cache -type f | wc -l || echo "Could not count files in DVC cache."
+          find .dvc/cache -type f -print0 | xargs -0 --no-run-if-empty wc -l || echo "Could not count files in DVC cache or cache is empty."
           echo "Listing some files in DVC cache (if any):"
-          find .dvc/cache -type f -print0 | xargs -0 ls -l | head -n 10 || echo "DVC cache is empty or find command failed."
+          find .dvc/cache -type f -print0 | xargs -0 --no-run-if-empty ls -l | head -n 10 || echo "DVC cache is empty or find command failed."
 
           echo "--- Attempting dvc checkout for specific model files ---"
           set -e # Exit immediately if dvc checkout fails
