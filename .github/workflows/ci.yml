@@ -13,14 +13,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
-        # We need to fetch all history for DVC to work correctly if comparing versions
-        # For this simple case where we just run `dvc repro` on current state, it might not be strictly needed.
-        # with:
-        #   fetch-depth: 0 
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9' # Match our project's Python version
 
@@ -29,84 +25,108 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Set up DVC
-        # This step would typically configure DVC to use a remote accessible by CI.
-        # For now, we'll just ensure DVC is usable. Our local remote won't be accessible.
-        # If using a cloud remote (e.g., S3), you'd set credentials here:
-        # env:
-        #   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        #   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Set up DVC and Pull Data from GCS
+        env:
+          # GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # Optional: Set if needed and secret exists
         run: |
-          echo "DVC setup step. In a real scenario, configure remote access here."
-          # Example for S3 (if you had an S3 remote configured in .dvc/config):
-          # dvc remote modify myremote endpointurl <S3_ENDPOINT_URL> # if not default AWS
-          # dvc remote modify myremote region <S3_REGION>
-          # dvc pull data/raw/reviews.csv # This would pull the data if remote was accessible
-          echo "Skipping dvc pull for now due to local remote."
-          # To make 'dvc repro' work without a pull, the raw data file would need to be
-          # present. For this exercise, 'dvc repro' will likely fail at finding reviews.csv
-          # unless we commit it (which is not DVC best practice for large files)
-          # or if the placeholder `reviews.csv` created by `dvc add` (if any) is sufficient
-          # for `dvc repro` to check status, even if it can't verify content hash without cache.
-
-          # Let's ensure the data/raw directory exists to avoid one type of error.
-          mkdir -p data/raw
-          # If reviews.csv is small and we *temporarily* commit it for CI demo:
-          # git checkout -- data/raw/reviews.csv # (Assuming it was committed)
-          # This is a HACK for demo purposes if the file is small.
-          # DO NOT DO THIS FOR LARGE, REAL DATA. USE A PROPER DVC REMOTE.
-
-          # For now, let's just proceed. `dvc repro` will show us what happens.
-          # The `reviews.csv` file linked by DVC in your working directory won't be
-          # present after a fresh git checkout in CI unless you commit it or `dvc pull` works.
-          # Since DVC replaced `data/raw/reviews.csv` with a placeholder/link,
-          # and that placeholder is what Git tracks, `dvc repro` might fail
-          # when it tries to access the actual content of `data/raw/reviews.csv`.
+          echo "Authenticating to Google Cloud..."
+          # Create the credentials file from the secret
+          # Ensure secrets.GCP_SA_KEY is correctly set in GitHub repository settings
+          echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
+          export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json
+          
+          echo "DVC setup: Using GCS remote (should be default from .dvc/config)."
+          
+          echo "Pulling DVC tracked data from GCS..."
+          # Pull only the raw data file(s) needed by your pipeline
+          # If your pipeline only depends on reviews.csv directly:
+          dvc pull data/raw/reviews.csv 
+          # If you need all DVC tracked data (e.g. if pipeline had other DVC deps):
+          # dvc pull -v # -v for verbose output
+          
+          echo "DVC data pull attempt finished."
+          echo "Contents of data/raw after pull:"
+          ls -lh data/raw/ # Verify reviews.csv is now the actual file and not a DVC placeholder
+          
+          # Clean up the temporary credentials file for security
+          rm -f gcp_creds_ci.json
 
       - name: Reproduce DVC pipeline
         run: |
           echo "Attempting to reproduce DVC pipeline..."
-          # This will likely fail if data/raw/reviews.csv is not fully available
-          # (i.e., just the DVC-managed placeholder is there, not the actual content from cache/remote)
-          dvc repro
+          dvc repro -v # -v for verbose output
           echo "DVC pipeline reproduction attempt finished."
-          # If it fails, the CI job will fail, which is good - it tells us something is wrong.
 
       - name: Lint with Flake8 (Placeholder)
+        # To enable:
+        # 1. Add 'flake8' to requirements.txt
+        # 2. pip install -r requirements.txt locally and commit requirements.txt
+        # 3. Uncomment the flake8 command below.
         run: |
-          # pip install flake8 # If not in requirements.txt
-          echo "Skipping linting for now."
+          echo "Linting step (currently placeholder)..."
           # flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
           # flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      - name: Test with Pytest (Placeholder)
+      - name: Run Tests with Pytest (Placeholder)
+        # To enable:
+        # 1. Add 'pytest' to requirements.txt
+        # 2. Create test files in the 'tests/' directory (e.g., tests/test_preprocess.py)
+        # 3. pip install -r requirements.txt locally and commit requirements.txt
+        # 4. Uncomment the pytest command below.
         run: |
-          # pip install pytest # If not in requirements.txt
-          echo "Skipping tests for now."
-          # pytest tests/
+          echo "Testing step (currently placeholder)..."
+          # pytest tests/ -v
 
-# Future Job: Build Docker Image (we'll add this in a later step)
-#   build_docker:
-#     needs: build_and_test # Depends on the previous job succeeding
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout repository
-#         uses: actions/checkout@v3
-#
-#       - name: Set up Docker Buildx
-#         uses: docker/setup-buildx-action@v2
-#
-#       - name: Login to Docker Hub (or other registry)
-#         if: github.event_name != 'pull_request' # Don't push on PRs from forks for security
-#         uses: docker/login-action@v2
-#         with:
-#           username: ${{ secrets.DOCKERHUB_USERNAME }}
-#           password: ${{ secrets.DOCKERHUB_TOKEN }}
-#
-#       - name: Build and push Docker image
-#         uses: docker/build-push-action@v4
-#         with:
-#           context: .
-#           file: ./Dockerfile
-#           push: ${{ github.event_name != 'pull_request' }} # Push if not a PR from fork
-#           tags: yourdockerhubusername/sentiment-analysis-api:latest # Replace with your details
+    # --- Future Job: Build Docker Image (can be added later) ---
+    # build_docker:
+    #   needs: build_and_test # Depends on the previous job succeeding
+    #   runs-on: ubuntu-latest
+    #   steps:
+    #     - name: Checkout repository
+    #       uses: actions/checkout@v4
+    #
+    #     - name: Set up DVC and Pull Models for Docker Build
+    #       env:
+    #         # GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+    #       run: |
+    #         echo "Authenticating to Google Cloud for Docker build..."
+    #         echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
+    #         export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json
+    #         pip install dvc[gcs] # Ensure dvc is available
+    #         echo "Pulling models for Docker build..."
+    #         dvc pull models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
+    #         # Or: dvc pull -R # to pull all outputs of dvc.yaml if they are DVC tracked
+    #         echo "Models pulled."
+    #         ls -lh models/
+    #         rm -f gcp_creds_ci.json
+    #
+    #     - name: Set up Docker Buildx
+    #       uses: docker/setup-buildx-action@v3
+    #
+    #     - name: Login to GitHub Container Registry (or Docker Hub)
+    #       if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    #       uses: docker/login-action@v3
+    #       with:
+    #         registry: ghcr.io # For GitHub Container Registry
+    #         username: ${{ github.actor }}
+    #         password: ${{ secrets.GITHUB_TOKEN }}
+    #         # For Docker Hub:
+    #         # username: ${{ secrets.DOCKERHUB_USERNAME }}
+    #         # password: ${{ secrets.DOCKERHUB_TOKEN }}
+    #
+    #     - name: Build and push Docker image
+    #       id: docker_build
+    #       uses: docker/build-push-action@v5
+    #       with:
+    #         context: .
+    #         file: ./Dockerfile
+    #         push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    #         tags: ghcr.io/${{ github.repository_owner }}/sentiment-analysis-api:latest # For GHCR
+    #         # For Docker Hub: yourdockerhubusername/sentiment-analysis-api:latest
+    #         labels: |
+    #           org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+    #           org.opencontainers.image.revision=${{ github.sha }}
+    #
+    #     - name: Echo image digest
+    #       if: steps.docker_build.outputs.digest
+    #       run: echo "Image digest: ${{ steps.docker_build.outputs.digest }}"
