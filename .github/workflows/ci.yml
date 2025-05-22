@@ -26,29 +26,21 @@ jobs:
           pip install -r requirements.txt
 
       - name: Set up DVC and Pull Data from GCS
-        env:
-          # GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # Optional: Set if needed and secret exists
+        # REMOVED THE env: BLOCK HERE IF GCP_PROJECT_ID ISN'T USED
         run: |
           echo "Authenticating to Google Cloud..."
-          # Create the credentials file from the secret
-          # Ensure secrets.GCP_SA_KEY is correctly set in GitHub repository settings
           echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
           export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json
           
           echo "DVC setup: Using GCS remote (should be default from .dvc/config)."
           
           echo "Pulling DVC tracked data from GCS..."
-          # Pull only the raw data file(s) needed by your pipeline
-          # If your pipeline only depends on reviews.csv directly:
           dvc pull data/raw/reviews.csv 
-          # If you need all DVC tracked data (e.g. if pipeline had other DVC deps):
-          # dvc pull -v # -v for verbose output
           
           echo "DVC data pull attempt finished."
           echo "Contents of data/raw after pull:"
-          ls -lh data/raw/ # Verify reviews.csv is now the actual file and not a DVC placeholder
+          ls -lh data/raw/
           
-          # Clean up the temporary credentials file for security
           rm -f gcp_creds_ci.json
 
       - name: Reproduce DVC pipeline
