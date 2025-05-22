@@ -69,7 +69,7 @@ jobs:
       - name: Set up DVC and Pull Models for Docker Build
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install "dvc[gcs]"
+          python3 -m pip install "dvc-gs"
           echo "Authenticating to Google Cloud for Docker build..."
           echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
           export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json
