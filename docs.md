@@ -187,3 +187,43 @@ Every good project starts with setting up version control and a basic structure.
     ```
 
 ---
+
+## Step 1: Creating a Basic Model Training Script
+
+**Goal:** Develop a Python script to train a simple sentiment analysis model.
+
+**Key Actions & Files:**
+1.  **Data Acquisition:**
+    *   Downloaded sentiment labelled sentences dataset (specifically `imdb_labelled.txt`).
+    *   Saved as `data/raw/reviews.csv`. *Note: This file is gitignored; will be handled by DVC later.*
+
+2.  **Dependencies:**
+    *   Updated `requirements.txt` with `pandas`, `scikit-learn`, `nltk`.
+    *   Set up a Python virtual environment and installed dependencies.
+
+3.  **Preprocessing (`src/preprocess.py`):**
+    *   Created a function `preprocess_text` to:
+        *   Lowercase text.
+        *   Remove numbers and punctuation.
+        *   Remove stopwords (using NLTK).
+        *   Apply Porter stemming.
+
+4.  **Training Script (`src/train.py`):**
+    *   Loads data from `data/raw/reviews.csv`.
+    *   Applies `preprocess_text` to reviews.
+    *   Splits data into training and testing sets (80/20).
+    *   Uses `TfidfVectorizer` for feature extraction.
+    *   Trains a `LogisticRegression` model.
+    *   Evaluates the model (accuracy, classification report).
+    *   Saves the trained model as `models/sentiment_model.joblib` and the vectorizer as `models/tfidf_vectorizer.joblib`. *Note: `models/` directory is gitignored; will be handled by DVC later.*
+
+5.  **Execution & Output:**
+    *   Ran `python src/train.py` successfully.
+    *   Observed console output for training progress, evaluation metrics, and file saving confirmation.
+    *   Model artifacts (`.joblib` files) were created in the `models/` directory.
+
+6.  **Git Commits:**
+    *   Committed `src/preprocess.py`, `src/train.py`, and `requirements.txt` to the repository.
+    *   `data/` and `models/` directories (and their contents) were correctly ignored by Git as per `.gitignore`.
+
+**Outcome:** A functional, local script that can train and save a sentiment analysis model and its associated vectorizer. The groundwork is laid for versioning data and models.
