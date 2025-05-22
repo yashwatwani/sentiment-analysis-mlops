@@ -1,5 +1,0 @@
-outs:
-- md5: d4b7c24b225ab17c6d6806ea1f60adfa
-  size: 77575
-  hash: md5
-  path: tfidf_vectorizer.joblib

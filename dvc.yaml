@@ -1,0 +1,10 @@
+stages:
+  train_model:
+    cmd: python src/train.py
+    deps:
+      - data/raw/reviews.csv
+      - src/preprocess.py
+      - src/train.py
+    outs:
+      - models/sentiment_model.joblib
+      - models/tfidf_vectorizer.joblib

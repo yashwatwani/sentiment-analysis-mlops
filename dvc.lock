@@ -1,0 +1,26 @@
+schema: '2.0'
+stages:
+  train_model:
+    cmd: python src/train.py
+    deps:
+    - path: data/raw/reviews.csv
+      hash: md5
+      md5: ccea809cf06938e64b783737778f5ca0
+      size: 85285
+    - path: src/preprocess.py
+      hash: md5
+      md5: f73ae46c71c8195ed4bf5c4f2f9b2d9a
+      size: 1213
+    - path: src/train.py
+      hash: md5
+      md5: 9a0a95f75bba07a546711c36b1dc023a
+      size: 3431
+    outs:
+    - path: models/sentiment_model.joblib
+      hash: md5
+      md5: d8a64998cc48987dac25bc76947d10d5
+      size: 17995
+    - path: models/tfidf_vectorizer.joblib
+      hash: md5
+      md5: b64ee1e4d4a7b64d98c0ea4207dd2f62
+      size: 77575
