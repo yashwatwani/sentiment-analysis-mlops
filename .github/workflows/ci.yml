@@ -1,12 +1,10 @@
---- # Optional document start
 name: MLOps CI Pipeline
 
-# yamllint disable-line rule:truthy # For the 'on:' block if yamllint complains
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -24,7 +22,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Assuming requirements.txt has 'dvc' and 'dvc-gs' listed separately,
+          # or 'dvc[gcs]' which should be preferred.
+          # If installing dvc and dvc-gs separately here:
+          # pip install dvc dvc-gs # Add other deps from requirements.txt
+          pip install -r requirements.txt # Ensure requirements.txt is updated
 
       - name: Set up DVC and Pull Data from GCS
         run: |
@@ -66,19 +68,54 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python for Docker Build Job
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
       - name: Set up DVC and Pull Models for Docker Build
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install "dvc-gs"
+          python -m pip install --upgrade pip
+          echo "Attempting to install dvc and dvc-gs separately using Python $(python --version)..."
+          # Install DVC core and dvc-gs separately.
+          # Ensure versions are compatible if you pin them.
+          pip install dvc dvc-gs # Or specific versions like dvc==3.59.2 dvc-gs==X.Y.Z
+          echo "Finished pip install dvc and dvc-gs."
+          
+          echo "Verifying dvc_gs import..."
+          # The module DVC tries to import is typically 'dvc_gs' (underscore)
+          python -c "import dvc_gs; print('dvc_gs imported successfully! Version:', getattr(dvc_gs, '__version__', 'unknown'))" || \
+            (echo "Failed to import dvc_gs. Listing installed packages:" && pip list && exit 1)
+
           echo "Authenticating to Google Cloud for Docker build..."
           echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
           export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json
-          echo "Pulling models for Docker build..."
-          mkdir -p models
-          dvc pull models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
-          echo "Models pulled."
+          
+          echo "--- Running dvc version ---"
+          dvc version
+
+          echo "--- Running dvc doctor (to check cache setup) ---"
+          dvc doctor || echo "dvc doctor reported issues"
+          
+          echo "Ensuring models directory exists for DVC operations..."
+          mkdir -p models 
+
+          echo "--- Attempting dvc fetch for specific model files ---"
+          dvc fetch models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
+          
+          echo "--- Listing DVC cache contents after fetch ---"
+          ls -l .dvc/cache/files/md5/ || echo "MD5 cache directory does not exist or is empty."
+          find .dvc/cache -type f -print0 | xargs -0 ls -l | head -n 10 || echo "Cache is empty or find command failed."
+
+          echo "--- Attempting dvc checkout for specific model files ---"
+          dvc checkout models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
+
+          echo "Models pull process finished. Listing models directory:"
           ls -lh models/
           rm -f gcp_creds_ci.json
+
+      # ... (Rest of Docker build steps: Buildx, Login, Get Date, Build and Push, Image Digest) ...
+      # (Make sure these steps are identical to the last working version you had for them)
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -87,8 +124,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}  # Ensure this line is correctly indented
-          password: ${{ secrets.GITHUB_TOKEN }} # Ensure this line is correctly indented
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get current date
         id: date
@@ -101,7 +138,6 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          # yamllint disable-line rule:line-length
           tags: ghcr.io/${{ github.repository_lower }}:latest,ghcr.io/${{ github.repository_lower }}:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -109,7 +145,6 @@ jobs:
             org.opencontainers.image.created=${{ steps.date.outputs.DATE }}
 
       - name: Image Digest
-        run: |
-          echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}"
+        run: echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}"
 
 # Ensure a final newline character below this line
