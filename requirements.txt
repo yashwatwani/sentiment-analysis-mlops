@@ -1,8 +1,9 @@
 pandas
 scikit-learn
 nltk
-dvc-gs
+dvc[gcs]
 mlflow
 matplotlib
 seaborn
 Flask
+flake8  # Add this line

@@ -1,0 +1,26 @@
+[flake8]
+# Set a more lenient line length
+max-line-length = 119
+
+# Errors/warnings to ignore
+# Put each error code on its own line if part of a list,
+# or ensure comments are on separate lines.
+# For extend-ignore, it's often a comma-separated list on one line,
+# or if on multiple lines, each line should be just the code or part of the list.
+
+# Option A: Comma-separated on one line, comment above
+# Whitespace before ':' (E203 - often conflicts with Black)
+# Line break before binary operator (W503 - PEP 8 changed, Black prefers after)
+extend-ignore = E203, W503
+
+# Option B: If your flake8 version/parser supports multi-line for extend-ignore clearly
+# (This can be tricky, Option A is safer)
+# extend-ignore =
+#     E203  # Whitespace before ':' (often conflicts with Black)
+#     W503  # Line break before binary operator (PEP 8 changed, Black prefers after)
+# The issue here is that the comment might still be seen as part of the "value" of the last item.
+
+# Example of per-file ignores (uncomment and adapt if needed)
+# per-file-ignores =
+#    src/__init__.py:F401
+#    */__init__.py:F401
