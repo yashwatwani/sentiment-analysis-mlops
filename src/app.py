@@ -143,4 +143,4 @@ if __name__ == '__main__':
         print("Model and vectorizer loaded. Starting Flask development server...")
         # For Cloud Run, it's better to respect the PORT environment variable
         port = int(os.environ.get("PORT", 5001))
-        app.run(host='0.0.0.0', port=port, debug=False) # Set debug=False for production/Cloud Run
+        app.run(host='0.0.0.0', port=port, debug=False)  # Set debug=False for production/Cloud Run

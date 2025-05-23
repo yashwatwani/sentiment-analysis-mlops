@@ -562,3 +562,50 @@ Every good project starts with setting up version control and a basic structure.
     *   Verified the published Docker image in the "Packages" section of the GitHub repository.
 
 **Outcome:** The CI pipeline now fully automates the process from code checkout, data/model pulling from a cloud DVC remote, DVC pipeline reproduction, linting, testing, and finally building and publishing a versioned Docker image of the application to GitHub Container Registry. This represents a significant achievement in establishing a robust and automated MLOps workflow.
+
+--------------
+
+## Step 10: Basic Continuous Deployment (CD) to Google Cloud Run
+
+**Goal:** Automate the deployment of the containerized application to Google Cloud Run whenever changes are pushed to the `main` branch and CI/CD pipeline succeeds.
+
+**Key Actions & Files:**
+1.  **GCP Prerequisites:**
+    *   Enabled Cloud Run API, Artifact Registry API, and Cloud Build API in the GCP project.
+    *   Ensured the deployment Service Account has `Cloud Run Admin` and `Service Account User` IAM roles.
+    *   (Recommended) Manually created the initial Cloud Run service (e.g., `sentiment-analysis-api` in `europe-west1`) with "Allow unauthenticated invocations" and Container port set to `5001` (matching the Flask app).
+
+2.  **GitHub Secrets Configuration:**
+    *   Created/Verified GitHub repository secrets:
+        *   `GCP_SA_KEY`: Service account JSON key content.
+        *   `GCP_PROJECT_ID`: Google Cloud Project ID.
+        *   `CLOUD_RUN_SERVICE_NAME`: Name of the Cloud Run service.
+        *   `CLOUD_RUN_REGION`: GCP region of the Cloud Run service.
+
+3.  **Updated Application (`src/app.py`) (Optional but Recommended):**
+    *   Modified `app.run()` to use `port=int(os.environ.get("PORT", 5001))` to respect the `PORT` environment variable injected by Cloud Run, and set `debug=False`.
+
+4.  **Updated CI Workflow (`.github/workflows/ci.yml`):**
+    *   Added a new job `deploy_to_cloud_run`.
+    *   **Job Dependencies & Conditions:**
+        *   `needs: build_docker`: Runs only after the `build_docker` job is successful.
+        *   `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`: Deploys only on pushes to the `main` branch.
+    *   **Steps within `deploy_to_cloud_run`:**
+        *   `Checkout repository`.
+        *   `Authenticate to Google Cloud`: Uses `google-github-actions/auth@v2` with `credentials_json: '${{ secrets.GCP_SA_KEY }}'`.
+        *   `Deploy to Google Cloud Run`:
+            *   Uses `google-github-actions/deploy-cloudrun@v2`.
+            *   Configured with `service`, `region`, and `project_id` from GitHub secrets.
+            *   Specifies the `image` from GHCR using the commit SHA for traceability (e.g., `ghcr.io/OWNER/IMAGE_NAME:${{ github.sha }}`).
+            *   Set `allow_unauthenticated: true`.
+        *   `Print Cloud Run Service URL`: Outputs the URL of the deployed service.
+
+5.  **Git Commits:**
+    *   Committed changes to `.github/workflows/ci.yml` and (if applicable) `src/app.py`.
+
+6.  **Workflow Execution and Deployment Verification:**
+    *   Pushed changes to `main`, triggering the full CI/CD pipeline.
+    *   All jobs (`build_and_test`, `build_docker`, `deploy_to_cloud_run`) completed successfully.
+    *   Tested the deployed application by accessing the Cloud Run service URL and sending requests to the `/predict` endpoint, verifying correct functionality.
+
+**Outcome:** A basic Continuous Deployment pipeline is established. Changes merged to the `main` branch that pass all CI checks (linting, testing, DVC pipeline, Docker build & push) are automatically deployed to Google Cloud Run, making the latest version of the application available at a public URL.
