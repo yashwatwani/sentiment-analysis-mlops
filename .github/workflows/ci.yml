@@ -54,8 +54,10 @@ jobs:
           echo "Running Pytest..."
           pytest tests/ -v
 
-  build_docker_and_push_to_gcr: # Renamed job for clarity
-    name: Build and Push Docker Image to GCR
+  # ... (name, on, jobs: build_and_test remain the same) ...
+
+  build_docker_and_push_to_gcr:
+    name: Build and Push Docker Image to GCR (EU)
     needs: build_and_test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -64,8 +66,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud (for DVC, GCR Push, and GCloud CLI)
-        id: auth # Give auth step an ID
+      - name: Authenticate to Google Cloud
+        id: auth
         uses: 'google-github-actions/auth@v2'
         with:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
@@ -77,51 +79,38 @@ jobs:
 
       - name: Set up DVC and Pull Models for Docker Build
         env:
-          # GOOGLE_APPLICATION_CREDENTIALS is set by the auth action for gcloud,
-          # but DVC Python library might need it explicitly for this run script.
-          # However, the auth action also configures gcloud, which DVC might use.
-          # For direct DVC use within this script, we re-export it from the temp file.
           GOOGLE_APPLICATION_CREDENTIALS: ./gcp_creds_for_dvc.json
         run: |
-          echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_for_dvc.json # Create separate for DVC if needed
-          
+          echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_for_dvc.json
           python -m pip install --upgrade pip
           pip install -r requirements.txt 
-          echo "Finished installing dependencies from requirements.txt."
-          
           python -c "import dvc_gs; print('dvc_gs imported successfully!')" || (pip list && exit 1)
-
-          echo "Pulling models for Docker build..."
           mkdir -p models 
           dvc pull models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
-          echo "Models pulled."
           ls -lh models/
           rm -f gcp_creds_for_dvc.json
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Configure Docker to use Google Cloud CLI credential helper for GCR
-        # This uses the gcloud CLI (already authenticated by the 'auth' step)
-        # to configure Docker to be able to push to gcr.io for the authenticated project.
-        run: gcloud auth configure-docker gcr.io --quiet 
-             # You can add other GCR hostnames if needed, e.g., us.gcr.io, eu.gcr.io
-             # Or specific Artifact Registry hostnames like '${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev'
+      - name: Configure Docker to use Google Cloud CLI credential helper for Regional GCR
+        run: gcloud auth configure-docker eu.gcr.io --quiet 
+             # Using the regional endpoint for Europe
 
       - name: Get current date
         id: date
         run: echo "DATE=$(date --iso-8601=seconds)" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image to GCR
+      - name: Build and push Docker image to Regional GCR (EU)
         id: docker_build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          push: true # Actually push the image
-          tags: | # Tags for GCR
-            gcr.io/${{ steps.auth.outputs.project_id }}/sentiment-analysis-mlops:latest
-            gcr.io/${{ steps.auth.outputs.project_id }}/sentiment-analysis-mlops:${{ github.sha }}
+          push: true
+          tags: | # Tags for eu.gcr.io
+            eu.gcr.io/${{ steps.auth.outputs.project_id }}/sentiment-analysis-mlops:latest
+            eu.gcr.io/${{ steps.auth.outputs.project_id }}/sentiment-analysis-mlops:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -133,7 +122,7 @@ jobs:
 
   deploy_to_cloud_run:
     name: Deploy to Google Cloud Run
-    needs: build_docker_and_push_to_gcr # Depends on the GCR push
+    needs: build_docker_and_push_to_gcr
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -144,15 +133,15 @@ jobs:
         with:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
-      - name: Deploy to Google Cloud Run
+      - name: Deploy to Google Cloud Run from Regional GCR (EU)
         id: deploy_cloud_run
         uses: 'google-github-actions/deploy-cloudrun@v2'
         with:
           service: ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }} 
           region: ${{ secrets.CLOUD_RUN_REGION || 'europe-west1' }}     
           project_id: ${{ steps.auth.outputs.project_id }} 
-          # Image now comes from GCR
-          image: gcr.io/${{ steps.auth.outputs.project_id }}/sentiment-analysis-mlops:${{ github.sha }}
+          # Image now comes from eu.gcr.io
+          image: eu.gcr.io/${{ steps.auth.outputs.project_id }}/sentiment-analysis-mlops:${{ github.sha }}
           flags: '--allow-unauthenticated --port=5001'
 
       - name: Print Cloud Run Service URL
