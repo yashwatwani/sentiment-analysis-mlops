@@ -518,50 +518,73 @@ Every good project starts with setting up version control and a basic structure.
 
 -------
 
-## Step 9: Building and Pushing Docker Image in CI to GHCR
+## Step 9: Basic Continuous Deployment (CD) to Google Cloud Run
 
-**Goal:** Automate the Docker image building process and push the built image to GitHub Container Registry (GHCR) as part of the CI pipeline.
+**Goal:** Automate the deployment of the containerized application to Google Cloud Run whenever changes are pushed to the `main` branch and the CI/CD pipeline succeeds.
+
+**Key Actions Cloud Run**
+```markdown
+## Step 10: Basic Continuous Deployment (CD) to Google Cloud Run
+
+**Goal:** Automate the deployment of the containerized application from Google Artifact Registry (AR) to Google Cloud Run whenever changes are pushed to the `main` branch and the CI/CD pipeline succeeds.
 
 **Key Actions & Files:**
-1.  **Local DVC State and GCS Remote Synchronization:**
-    *   Ensured the local DVC pipeline (`dvc repro`) ran successfully, generating the latest model artifacts.
-    *   Successfully pushed these DVC-tracked model artifacts and any data dependencies to the configured GCS remote using `dvc push` after correctly setting the `GOOGLE_APPLICATION_CREDENTIALS` environment variable locally.
-    *   Committed the updated `dvc.lock` file to Git to reflect the state of the pushed artifacts.
+1.  **GCP Prerequisites & Configuration:**
+    *   Ensured Cloud Run API and Artifact Registry API were enabled in the GCP project.
+    *   Verified the deployment Service Account possessed `Cloud Run Admin`, `Service Account User`, and `Artifact Registry Writer` (or `Storage Admin` for GCR if used previously) IAM roles.
+    *   (Recommended) Manually created the initial Cloud Run service (e.g., `sentiment-analysis-api` in `europe-west1`) with "Allow unauthenticated invocations" and Container port set to `5001`.
 
 2.  **GitHub Secrets Configuration:**
-    *   Verified/Updated the `GCP_SA_KEY` secret in GitHub repository settings to contain the content of the correct, working service account JSON key file.
+    *   Verified/Created GitHub repository secrets: `GCP_SA_KEY`, `GCP_PROJECT_ID`, `CLOUD_RUN_SERVICE_NAME`, `CLOUD_RUN_REGION`, and `AR_REPO_NAME` (for the Artifact Registry repository name).
+
+3.  **CI Workflow Update (`.github/workflows/ci.yml`):**
+    *   The `build_docker_and_push_to_ar` job was configured to build the Docker image and push it to Google Artifact Registry, using regional AR paths (e.g., `europe-west1-docker.pkg.dev/YOUR_PROJECT_ID/YOUR_AR_REPO_NAME/sentiment-analysis-mlops:TAG`).
+    *   Added a new job `deploy_to_cloud_run`.
+    *   **Job Dependencies & Conditions:**
+        *   `needs: build_docker_and_push_to_ar`: Runs only after the Docker image is successfully built and pushed to AR.
+        *   `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`: Deploys only on pushes to the `main` branch.
+    *   **Steps within `deploy_to_cloud_run`:**
+        *   `Authenticate to Google Cloud`: Uses `google-github-actions/auth@v2` with `credentials_json: '${{ secrets.GCP_SA_KEY }}'`.
+        *   `Debug Deployment Parameters`: Added echo statements to verify the resolved values for service name, region, project ID, and image URL before deployment.
+        *   `Deploy to Google Cloud Run`:
+            *   Uses `google-github-actions/deploy-cloudrun@v2`.
+            *   Configured with `service`, `region`, and `project_id` from GitHub & Files:**
+1.  **GCP Prerequisites & Setup:**
+    *   Enabled Cloud Run API, Container Registry API (or Artifact Registry API), and Cloud Build API in the GCP project.
+    *   Created a dedicated Google Artifact Registry Docker repository (e.g., `mlops-images` in `europe-west1`).
+    *   Ensured the deployment Service Account (from `GCP_SA_KEY` secret) has necessary IAM roles: `Artifact Registry Writer` (for pushing images), `Cloud Run Admin` (for deploying services), and `Service Account User`.
+    *   (Recommended) Manually created the initial Cloud Run service via GCP Console (e.g., `sentiment-analysis-api` in `europe-west1`) with "Allow unauthenticated invocations" and Container port set to `5001`. This ensures the service construct exists before CI tries to update it.
+
+2.  **GitHub Secrets Configuration:**
+    *   Verified/Created GitHub repository secrets:
+        *   `GCP_SA_KEY`: Service account JSON key content.
+        *   `GCP_PROJECT_ID`: Google Cloud Project ID.
+        *   `CLOUD_RUN_SERVICE_NAME`: Name of the Cloud Run service (e.g., `sentiment-analysis-api`).
+        *   `CLOUD_RUN_REGION`: GCP region of the Cloud Run service (e.g., `europe-west1`).
+        *   `AR_REPO_NAME`: Name of the Google Artifact Registry repository (e.g., `mlops-images`).
 
 3.  **Updated CI Workflow (`.github/workflows/ci.yml`):**
-    *   The `build_docker` job was configured with robust steps:
-        *   **Job Dependencies & Conditions:** Runs after `build_and_test` succeeds and only on pushes to `main`.
-        *   **Python Setup:** Explicitly sets up the project's Python version (e.g., 3.9).
-        *   **DVC Setup & Model Pull:**
-            *   Installs DVC with GCS support (e.g., from `requirements.txt` containing `dvc[gcs]`).
-            *   Authenticates to GCP using the `GCP_SA_KEY` secret to create a temporary credentials file for `GOOGLE_APPLICATION_CREDENTIALS`.
-            *   Includes diagnostic `dvc version` and `dvc doctor` commands.
-            *   Runs `dvc status -r mygcsremote ... --json` to check remote status.
-            *   Runs `dvc fetch models/... -v` to download model files from GCS into the CI runner's DVC cache.
-            *   Includes steps to list and verify DVC cache contents.
-            *   Runs `dvc checkout models/... -v` to place models from the cache into the workspace.
-            *   Verifies that model files are present and non-empty in the workspace.
-            *   Cleans up the temporary credentials file.
-        *   **Docker Build & Push Steps:**
-            *   Sets up Docker Buildx.
-            *   Logs into GitHub Container Registry (`ghcr.io`) using `GITHUB_TOKEN`.
-            *   Builds the Docker image using the `Dockerfile`.
-            *   Pushes the image to GHCR, tagged with `latest` and the commit SHA (e.g., `ghcr.io/owner/repo:latest`).
-            *   Adds OCI image labels, including a creation timestamp.
+    *   The `build_docker_and_push_to_ghcr` job was refactored to `build_docker_and_push_to_ar` to push the Docker image to Google Artifact Registry (AR) instead of GitHub Container Registry (GHCR). This involved:
+        *   Authenticating Docker secrets/auth outputs.
+            *   Specifies the `image` from Artifact Registry using the commit SHA for traceability.
+            *   Uses `flags: '--allow-unauthenticated --port=5001'` to make the service public and specify the container port.
+        *   `Print Cloud Run Service URL`: Outputs the URL of the deployed service.
+    *   Resolved various YAML syntax, Docker tagging, and GCloud/DVC command issues through iterative debugging.
 
 4.  **Git Commits:**
-    *   Committed the final working version of `.github/workflows/ci.yml`.
+    *   Committed all changes to `.github/workflows/ci.yml`.
 
-5.  **Workflow Execution and GHCR Verification:**
-    *   Pushed changes, triggering the Actions workflow.
-    *   The `build_and_test` job completed successfully.
-    *   The `build_docker` job successfully pulled models from GCS, built the Docker image, and pushed it to GHCR.
-    *   Verified the published Docker image in the "Packages" section of the GitHub repository.
+5.  **Workflow Execution and Deployment Verification:**
+    *   Pushed changes to  to AR using `gcloud auth configure-docker`.
+        *   Tagging the Docker image for the AR path`main`, triggering the full CI/CD pipeline.
+    *   All jobs (`build_and_test`, `build_docker_and_push_to_ar`, `deploy_to_cloud_run`) completed successfully.
+    *   Tested the root endpoint (`/`) of the deployed application via its Cloud Run URL, confirming it was live.
+    *   Tested the `/predict` endpoint using `curl` (or Postman) with a `POST` request and JSON payload, verifying correct API functionality.
 
-**Outcome:** The CI pipeline now fully automates the process from code checkout, data/model pulling from a cloud DVC remote, DVC pipeline reproduction, linting, testing, and finally building and publishing a versioned Docker image of the application to GitHub Container Registry. This represents a significant achievement in establishing a robust and automated MLOps workflow.
+**Outcome:** A complete Continuous Integration and Continuous Deployment (CI/CD) pipeline is established. Changes merged to the `main` branch that pass all CI checks are automatically built into a Docker image, pushed to (e.g., `REGION-docker.pkg.dev/PROJECT_ID/AR_REPO_NAME/IMAGE_NAME Google Artifact Registry, and then deployed to Google Cloud Run, making the latest version of the application available at a public URL:TAG`).
+    *   Added a new job `deploy_to_cloud_run`.
+    *   **Job Dependencies & Conditions for `deploy_to_cloud_run`:**
+        *   `needs: build_docker.
 
 --------------
 
