@@ -159,10 +159,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
-        id: auth # Give the auth step an ID
+        id: auth 
         uses: 'google-github-actions/auth@v2'
         with:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Debug Deployment Parameters # THIS IS THE DEBUG STEP TO LOOK AT
+        run: |
+          echo "Service Name from secret (or default): ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }}"
+          echo "Region from secret (or default): ${{ secrets.CLOUD_RUN_REGION || 'europe-west1' }}"
+          echo "Project ID from auth step output: ${{ steps.auth.outputs.project_id }}"
+          echo "Project ID from secret (if set - for comparison): ${{ secrets.GCP_PROJECT_ID }}"
+          echo "Image to deploy: ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}"
 
       - name: Deploy to Google Cloud Run
         id: deploy_cloud_run
@@ -170,19 +178,12 @@ jobs:
         with:
           service: ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }} 
           region: ${{ secrets.CLOUD_RUN_REGION || 'europe-west1' }}     
-          # Use the project_id output from the auth step for consistency   
           project_id: ${{ steps.auth.outputs.project_id }} 
-          # Ensure github.actor here matches the owner used in the 'tags:' of build_docker job
           image: ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
-          # Pass gcloud flags using the 'flags' input
           flags: '--allow-unauthenticated --port=5001'
-          # Optional: set environment variables for your Cloud Run service
-          # env_vars: |
-          #   FLASK_ENV=production
 
       - name: Print Cloud Run Service URL
-        if: steps.deploy_cloud_run.outputs.url # Check if the url output exists
-        run: |
-          echo "Service deployed to: ${{ steps.deploy_cloud_run.outputs.url }}"
+        if: steps.deploy_cloud_run.outputs.url 
+        run: echo "Service deployed to: ${{ steps.deploy_cloud_run.outputs.url }}"
 
 # Ensure a final newline character below this line
