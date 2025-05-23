@@ -155,8 +155,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.actor_lower }}/sentiment-analysis-mlops:latest
-            ghcr.io/${{ github.actor_lower }}/sentiment-analysis-mlops:${{ github.sha }}
+            ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:latest
+            ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
