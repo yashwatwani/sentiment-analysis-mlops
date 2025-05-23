@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    branches: [ main ] # Deploy job will be skipped for PRs due to its 'if' condition
   workflow_dispatch:
 
 jobs:
@@ -84,54 +84,37 @@ jobs:
           
           echo "--- Running dvc version ---"
           dvc version
-
           echo "--- Running dvc doctor ---"
           dvc doctor || echo "dvc doctor reported issues but proceeding..."
-          
-          echo "Ensuring models directory exists for DVC operations..."
           mkdir -p models
-
           echo "--- Checking status of remote 'mygcsremote' for specific model files (using --json) ---"
           dvc status -r mygcsremote models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v --json || \
             echo "dvc status -r mygcsremote --json failed or showed unexpected status. Output above."
-
           echo "--- Attempting dvc fetch for specific model files ---"
           dvc fetch models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
           echo "--- dvc fetch command completed ---"
-          
           echo "--- Listing DVC cache contents after fetch ---"
-          echo "Checking for general cache structure:"
           ls -la .dvc/cache/files/md5/ || echo "MD5 cache directory does not exist or is empty."
-          echo "Number of files in DVC cache:"
           find .dvc/cache -type f -print0 | xargs -0 --no-run-if-empty wc -l || echo "Could not count files in DVC cache or cache is empty."
-          echo "Listing some files in DVC cache (if any):"
           find .dvc/cache -type f -print0 | xargs -0 --no-run-if-empty ls -l | head -n 10 || echo "DVC cache is empty or find command failed."
-
           echo "--- Attempting dvc checkout for specific model files ---"
           dvc checkout models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
           echo "--- dvc checkout command completed ---"
-
-          echo "Models pull process finished. Listing models directory:"
           ls -lh models/
           if [ -s models/sentiment_model.joblib ] && [ -s models/tfidf_vectorizer.joblib ]; then
             echo "Model files successfully checked out and are not empty."
           else
             echo "ERROR: Model files were not checked out correctly or are empty."
-            # exit 1 # Keep commented out for now to see all logs from this job
+            exit 1 
           fi
-          
           rm -f gcp_creds_ci.json
 
-      - name: Debug GitHub Context Variables # NEW DEBUGGING STEP
+      - name: Debug GitHub Context Variables
         run: |
           echo "github.repository: ${{ github.repository }}"
-          echo "github.repository_lower: ${{ github.repository_lower }}"
-          echo "github.repository_owner: ${{ github.repository_owner }}"
-          echo "github.repository_owner_lower: ${{ github.repository_owner_lower }}"
-          echo "github.event.repository.name: ${{ github.event.repository.name }}"
-          echo "github.event.repository.name_lower: ${{ github.event.repository.name_lower }}" # Corrected from just name_lower
-          echo "github.actor: ${{ github.actor }}"
-          echo "github.actor_lower: ${{ github.actor_lower }}" # Added for completeness
+          echo "github.repository_owner: ${{ github.repository_owner }}" # Using this one for tags
+          echo "github.actor: ${{ github.actor }}" # Also a good candidate for owner if personal repo
+          # Other _lower variables were empty in previous debug, so not relying on them
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -140,7 +123,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.actor }} # This worked for login
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get current date
@@ -154,7 +137,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
+          tags: | # Using github.actor as it was confirmed to work for login username
             ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:latest
             ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
           labels: |
@@ -165,5 +148,43 @@ jobs:
       - name: Image Digest
         run: |
           echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}"
+
+  deploy_to_cloud_run: # NEW JOB ADDED HERE
+    name: Deploy to Google Cloud Run
+    needs: build_docker # Depends on the Docker image being built and pushed
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # No special 'permissions' block needed here if using SA Key JSON directly for google-github-actions/auth
+
+    steps:
+      - name: Checkout repository # Optional for this job if only image URL is needed, but harmless
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}' # Using the Service Account Key JSON
+
+      - name: Deploy to Google Cloud Run
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          # These should be set as GitHub Secrets or Variables for your repository
+          service: ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }} 
+          region: ${{ secrets.CLOUD_RUN_REGION || 'us-central1' }}        
+          project_id: ${{ secrets.GCP_PROJECT_ID }}                     
+          # Use the image pushed in the previous job, tagged with the commit SHA for traceability
+          # Ensure github.actor here matches the owner used in the 'tags:' of build_docker job
+          image: ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
+          # To make the service publicly accessible:
+          allow_unauthenticated: true 
+          # Environment variables for the Cloud Run service (optional)
+          # env_vars: |
+          #   FLASK_ENV=production
+          # The port Cloud Run listens to is determined by what your app inside the container listens on (5001 for us)
+          # and how the Cloud Run service is configured (it auto-detects EXPOSE or defaults to 8080).
+          # If your Dockerfile EXPOSEs 5001 and Flask runs on 5001, Cloud Run should handle it.
+          # You can also set the container port explicitly in Cloud Run service config via --port flag in gcloud
+          # or when creating/updating the service in the console. The deploy-cloudrun action might also have an input for it.
+          # For this action, often setting it in the service config or Dockerfile is enough.
 
 # Ensure a final newline character below this line

@@ -141,6 +141,6 @@ if __name__ == '__main__':
         )
     else:
         print("Model and vectorizer loaded. Starting Flask development server...")
-        # debug=True for development
-        # host='0.0.0.0' makes it accessible on your network
-        app.run(host='0.0.0.0', port=5001, debug=True)
+        # For Cloud Run, it's better to respect the PORT environment variable
+        port = int(os.environ.get("PORT", 5001))
+        app.run(host='0.0.0.0', port=port, debug=False) # Set debug=False for production/Cloud Run

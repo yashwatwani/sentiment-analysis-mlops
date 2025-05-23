@@ -515,3 +515,50 @@ Every good project starts with setting up version control and a basic structure.
     *   Verified that the linting (`flake8 src/`) and testing (`pytest tests/ -v`) steps execute and pass in the CI environment.
 
 **Outcome:** The CI pipeline is now more comprehensive. It not only checks for DVC pipeline reproducibility but also enforces code style consistency through linting and validates core functionality through automated unit tests. This leads to higher code quality, earlier bug detection, and a more reliable development process.
+
+-------
+
+## Step 9: Building and Pushing Docker Image in CI to GHCR
+
+**Goal:** Automate the Docker image building process and push the built image to GitHub Container Registry (GHCR) as part of the CI pipeline.
+
+**Key Actions & Files:**
+1.  **Local DVC State and GCS Remote Synchronization:**
+    *   Ensured the local DVC pipeline (`dvc repro`) ran successfully, generating the latest model artifacts.
+    *   Successfully pushed these DVC-tracked model artifacts and any data dependencies to the configured GCS remote using `dvc push` after correctly setting the `GOOGLE_APPLICATION_CREDENTIALS` environment variable locally.
+    *   Committed the updated `dvc.lock` file to Git to reflect the state of the pushed artifacts.
+
+2.  **GitHub Secrets Configuration:**
+    *   Verified/Updated the `GCP_SA_KEY` secret in GitHub repository settings to contain the content of the correct, working service account JSON key file.
+
+3.  **Updated CI Workflow (`.github/workflows/ci.yml`):**
+    *   The `build_docker` job was configured with robust steps:
+        *   **Job Dependencies & Conditions:** Runs after `build_and_test` succeeds and only on pushes to `main`.
+        *   **Python Setup:** Explicitly sets up the project's Python version (e.g., 3.9).
+        *   **DVC Setup & Model Pull:**
+            *   Installs DVC with GCS support (e.g., from `requirements.txt` containing `dvc[gcs]`).
+            *   Authenticates to GCP using the `GCP_SA_KEY` secret to create a temporary credentials file for `GOOGLE_APPLICATION_CREDENTIALS`.
+            *   Includes diagnostic `dvc version` and `dvc doctor` commands.
+            *   Runs `dvc status -r mygcsremote ... --json` to check remote status.
+            *   Runs `dvc fetch models/... -v` to download model files from GCS into the CI runner's DVC cache.
+            *   Includes steps to list and verify DVC cache contents.
+            *   Runs `dvc checkout models/... -v` to place models from the cache into the workspace.
+            *   Verifies that model files are present and non-empty in the workspace.
+            *   Cleans up the temporary credentials file.
+        *   **Docker Build & Push Steps:**
+            *   Sets up Docker Buildx.
+            *   Logs into GitHub Container Registry (`ghcr.io`) using `GITHUB_TOKEN`.
+            *   Builds the Docker image using the `Dockerfile`.
+            *   Pushes the image to GHCR, tagged with `latest` and the commit SHA (e.g., `ghcr.io/owner/repo:latest`).
+            *   Adds OCI image labels, including a creation timestamp.
+
+4.  **Git Commits:**
+    *   Committed the final working version of `.github/workflows/ci.yml`.
+
+5.  **Workflow Execution and GHCR Verification:**
+    *   Pushed changes, triggering the Actions workflow.
+    *   The `build_and_test` job completed successfully.
+    *   The `build_docker` job successfully pulled models from GCS, built the Docker image, and pushed it to GHCR.
+    *   Verified the published Docker image in the "Packages" section of the GitHub repository.
+
+**Outcome:** The CI pipeline now fully automates the process from code checkout, data/model pulling from a cloud DVC remote, DVC pipeline reproduction, linting, testing, and finally building and publishing a versioned Docker image of the application to GitHub Container Registry. This represents a significant achievement in establishing a robust and automated MLOps workflow.
