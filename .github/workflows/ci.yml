@@ -91,12 +91,11 @@ jobs:
           echo "Ensuring models directory exists for DVC operations..."
           mkdir -p models
 
-          echo "--- Checking status of remote 'mycloudremote' for specific model files (using --json) ---"
-          dvc status -r mycloudremote models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v --json || \
-            echo "dvc status -r mycloudremote --json failed or showed unexpected status. Output above."
+          echo "--- Checking status of remote 'mygcsremote' for specific model files (using --json) ---"
+          dvc status -r mygcsremote models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v --json || \
+            echo "dvc status -r mygcsremote --json failed or showed unexpected status. Output above."
 
           echo "--- Attempting dvc fetch for specific model files ---"
-          # Removed --force; it's not a valid option for dvc fetch
           dvc fetch models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
           echo "--- dvc fetch command completed ---"
           
@@ -109,7 +108,6 @@ jobs:
           find .dvc/cache -type f -print0 | xargs -0 --no-run-if-empty ls -l | head -n 10 || echo "DVC cache is empty or find command failed."
 
           echo "--- Attempting dvc checkout for specific model files ---"
-          # dvc checkout will fail if fetch didn't populate cache; let it fail to see the error.
           dvc checkout models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
           echo "--- dvc checkout command completed ---"
 
@@ -119,10 +117,21 @@ jobs:
             echo "Model files successfully checked out and are not empty."
           else
             echo "ERROR: Model files were not checked out correctly or are empty."
-            # exit 1 # Temporarily commented out to see all logs
+            # exit 1 # Keep commented out for now to see all logs from this job
           fi
           
           rm -f gcp_creds_ci.json
+
+      - name: Debug GitHub Context Variables # NEW DEBUGGING STEP
+        run: |
+          echo "github.repository: ${{ github.repository }}"
+          echo "github.repository_lower: ${{ github.repository_lower }}"
+          echo "github.repository_owner: ${{ github.repository_owner }}"
+          echo "github.repository_owner_lower: ${{ github.repository_owner_lower }}"
+          echo "github.event.repository.name: ${{ github.event.repository.name }}"
+          echo "github.event.repository.name_lower: ${{ github.event.repository.name_lower }}" # Corrected from just name_lower
+          echo "github.actor: ${{ github.actor }}"
+          echo "github.actor_lower: ${{ github.actor_lower }}" # Added for completeness
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -145,10 +154,15 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          # Ensure this line is exactly as follows:
-          tags: | 
-            ghcr.io/${{ github.repository_lower }}:latest
-            ghcr.io/${{ github.repository_lower }}:${{ github.sha }}
+          # Using a more explicit way to construct the image name
+          # Assumes your repository name IS 'sentiment-analysis-mlops'
+          tags: |
+            ghcr.io/${{ github.repository_owner_lower }}/sentiment-analysis-mlops:latest
+            ghcr.io/${{ github.repository_owner_lower }}/sentiment-analysis-mlops:${{ github.sha }}
+          # Fallback for debugging if the above doesn't work, replace YASHWATWANI with your actual GitHub username/org
+          # tags: |
+          #   ghcr.io/YASHWATWANI_LOWERCASE/sentiment-analysis-mlops:latest
+          #   ghcr.io/YASHWATWANI_LOWERCASE/sentiment-analysis-mlops:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
