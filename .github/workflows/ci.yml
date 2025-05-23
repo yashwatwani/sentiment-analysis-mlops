@@ -112,9 +112,8 @@ jobs:
       - name: Debug GitHub Context Variables
         run: |
           echo "github.repository: ${{ github.repository }}"
-          echo "github.repository_owner: ${{ github.repository_owner }}" # Using this one for tags
-          echo "github.actor: ${{ github.actor }}" # Also a good candidate for owner if personal repo
-          # Other _lower variables were empty in previous debug, so not relying on them
+          echo "github.repository_owner: ${{ github.repository_owner }}"
+          echo "github.actor: ${{ github.actor }}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -123,7 +122,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }} # This worked for login
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get current date
@@ -137,7 +136,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: | # Using github.actor as it was confirmed to work for login username
+          tags: |
             ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:latest
             ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
           labels: |
@@ -149,42 +148,40 @@ jobs:
         run: |
           echo "Pushed image with digest: ${{ steps.docker_build.outputs.digest }}"
 
-  deploy_to_cloud_run: # NEW JOB ADDED HERE
+  deploy_to_cloud_run:
     name: Deploy to Google Cloud Run
-    needs: build_docker # Depends on the Docker image being built and pushed
+    needs: build_docker
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # No special 'permissions' block needed here if using SA Key JSON directly for google-github-actions/auth
 
     steps:
-      - name: Checkout repository # Optional for this job if only image URL is needed, but harmless
+      - name: Checkout repository 
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
+        id: auth # Give the auth step an ID
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}' # Using the Service Account Key JSON
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
       - name: Deploy to Google Cloud Run
+        id: deploy_cloud_run
         uses: 'google-github-actions/deploy-cloudrun@v2'
         with:
-          # These should be set as GitHub Secrets or Variables for your repository
           service: ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }} 
-          region: ${{ secrets.CLOUD_RUN_REGION || 'us-central1' }}        
-          project_id: ${{ secrets.GCP_PROJECT_ID }}                     
-          # Use the image pushed in the previous job, tagged with the commit SHA for traceability
+          region: ${{ secrets.CLOUD_RUN_REGION || 'europe-west1' }}     
+          # Use the project_id output from the auth step for consistency   
+          project_id: ${{ steps.auth.outputs.project_id }} 
           # Ensure github.actor here matches the owner used in the 'tags:' of build_docker job
           image: ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
-          # To make the service publicly accessible:
-          allow_unauthenticated: true 
-          # Environment variables for the Cloud Run service (optional)
+          # Pass gcloud flags using the 'flags' input
+          flags: '--allow-unauthenticated --port=5001'
+          # Optional: set environment variables for your Cloud Run service
           # env_vars: |
           #   FLASK_ENV=production
-          # The port Cloud Run listens to is determined by what your app inside the container listens on (5001 for us)
-          # and how the Cloud Run service is configured (it auto-detects EXPOSE or defaults to 8080).
-          # If your Dockerfile EXPOSEs 5001 and Flask runs on 5001, Cloud Run should handle it.
-          # You can also set the container port explicitly in Cloud Run service config via --port flag in gcloud
-          # or when creating/updating the service in the console. The deploy-cloudrun action might also have an input for it.
-          # For this action, often setting it in the service config or Dockerfile is enough.
+
+      - name: Print Cloud Run Service URL
+        if: steps.deploy_cloud_run.outputs.url # Check if the url output exists
+        run: echo "Service deployed to: ${{ steps.deploy_cloud_run.outputs.url }}"
 
 # Ensure a final newline character below this line
