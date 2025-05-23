@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ] # Deploy job will be skipped for PRs due to its 'if' condition
+    branches: [ main ] # Deploy job will be skipped for PRs
   workflow_dispatch:
 
 jobs:
   build_and_test:
-    # ... (This job remains exactly as it was when it was fully working) ...
+    # ... (This job remains exactly the same as when it was fully working) ...
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -49,8 +49,8 @@ jobs:
           echo "Running Pytest..."
           pytest tests/ -v
 
-  build_docker_and_push_to_ghcr: # Name reverted
-    name: Build and Push Docker Image to GHCR # Name reverted
+  build_docker_and_push_to_ar: # Renamed job
+    name: Build and Push Docker Image to Artifact Registry
     needs: build_and_test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -59,20 +59,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Authenticate to Google Cloud (for DVC, AR Push, and GCloud CLI)
+        id: auth 
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
       - name: Set up Python for Docker Build Job
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
       - name: Set up DVC and Pull Models for Docker Build
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ./gcp_creds_for_dvc.json
         run: |
+          echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_for_dvc.json
           python -m pip install --upgrade pip
           pip install -r requirements.txt 
-          echo "Finished installing dependencies from requirements.txt."
           python -c "import dvc_gs; print('dvc_gs imported successfully!')" || (pip list && exit 1)
-          echo "Authenticating to Google Cloud for DVC model pull..." # Clarified purpose
-          echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_for_dvc.json
-          export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_for_dvc.json
           mkdir -p models 
           dvc fetch models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
           dvc checkout models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
@@ -84,35 +89,28 @@ jobs:
           fi
           rm -f gcp_creds_for_dvc.json
 
-      - name: Debug GitHub Context Variables # Keeping this for tag verification
-        run: |
-          echo "github.repository_owner: ${{ github.repository_owner }}"
-          echo "github.actor: ${{ github.actor }}"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry # Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }} # This should be your GitHub username
-          password: ${{ secrets.GITHUB_TOKEN }} # Specific token for GHCR
+      - name: Configure Docker to use Google Cloud CLI credential helper for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev --quiet
+             # This uses CLOUD_RUN_REGION to form the Artifact Registry hostname, e.g., europe-west1-docker.pkg.dev
 
       - name: Get current date
         id: date
         run: echo "DATE=$(date --iso-8601=seconds)" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image to GHCR # Pushing to GHCR
+      - name: Build and push Docker image to Artifact Registry
         id: docker_build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: | # Tags for GHCR
-            ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:latest
-            ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
+          # Tags for Artifact Registry: HOSTNAME/PROJECT_ID/AR_REPO_NAME/IMAGE_NAME:TAG
+          tags: |
+            ${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ secrets.AR_REPO_NAME }}/sentiment-analysis-mlops:latest
+            ${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ secrets.AR_REPO_NAME }}/sentiment-analysis-mlops:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -124,7 +122,7 @@ jobs:
 
   deploy_to_cloud_run:
     name: Deploy to Google Cloud Run
-    needs: build_docker_and_push_to_ghcr # Depends on the GHCR push
+    needs: build_docker_and_push_to_ar # Depends on the AR push
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -135,22 +133,23 @@ jobs:
         with:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
-      - name: Debug Deployment Parameters 
+      - name: Debug Deployment Parameters
         run: |
-          echo "Service Name from secret (or default): ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }}"
-          echo "Region from secret (or default): ${{ secrets.CLOUD_RUN_REGION || 'europe-west1' }}"
-          echo "Project ID from auth step output: ${{ steps.auth.outputs.project_id }}"
-          echo "Image to deploy from GHCR: ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}"
+          echo "Service Name: ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }}"
+          echo "Region: ${{ secrets.CLOUD_RUN_REGION || 'europe-west1' }}"
+          echo "Project ID (from auth): ${{ steps.auth.outputs.project_id }}"
+          echo "AR Repo Name: ${{ secrets.AR_REPO_NAME }}"
+          echo "Image to deploy: ${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ secrets.AR_REPO_NAME }}/sentiment-analysis-mlops:${{ github.sha }}"
 
-      - name: Deploy to Google Cloud Run from GHCR
+      - name: Deploy to Google Cloud Run
         id: deploy_cloud_run
         uses: 'google-github-actions/deploy-cloudrun@v2'
         with:
           service: ${{ secrets.CLOUD_RUN_SERVICE_NAME || 'sentiment-analysis-api' }} 
           region: ${{ secrets.CLOUD_RUN_REGION || 'europe-west1' }}     
           project_id: ${{ steps.auth.outputs.project_id }} 
-          # Image now comes from GHCR
-          image: ghcr.io/${{ github.actor }}/sentiment-analysis-mlops:${{ github.sha }}
+          # Image now comes from Artifact Registry
+          image: ${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ secrets.AR_REPO_NAME }}/sentiment-analysis-mlops:${{ github.sha }}
           flags: '--allow-unauthenticated --port=5001'
 
       - name: Print Cloud Run Service URL
