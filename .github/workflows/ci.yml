@@ -147,22 +147,16 @@ jobs:
         id: date
         run: echo "DATE=$(date --iso-8601=seconds)" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image to GHCR
+            - name: Build and push Docker image to GHCR
         id: docker_build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
-          # Using a more explicit way to construct the image name
-          # Assumes your repository name IS 'sentiment-analysis-mlops'
           tags: |
-            ghcr.io/${{ github.repository_owner_lower }}/sentiment-analysis-mlops:latest
-            ghcr.io/${{ github.repository_owner_lower }}/sentiment-analysis-mlops:${{ github.sha }}
-          # Fallback for debugging if the above doesn't work, replace YASHWATWANI with your actual GitHub username/org
-          # tags: |
-          #   ghcr.io/YASHWATWANI_LOWERCASE/sentiment-analysis-mlops:latest
-          #   ghcr.io/YASHWATWANI_LOWERCASE/sentiment-analysis-mlops:${{ github.sha }}
+            ghcr.io/${{ github.actor_lower }}/sentiment-analysis-mlops:latest
+            ghcr.io/${{ github.actor_lower }}/sentiment-analysis-mlops:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
