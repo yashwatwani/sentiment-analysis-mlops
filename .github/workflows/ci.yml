@@ -91,9 +91,9 @@ jobs:
           echo "Ensuring models directory exists for DVC operations..."
           mkdir -p models
 
-          echo "--- Checking status of remote 'mygcsremote' for specific model files (using --json) ---"
-          dvc status -r mygcsremote models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v --json || \
-            echo "dvc status -r mygcsremote --json failed or showed unexpected status. Output above."
+          echo "--- Checking status of remote 'mycloudremote' for specific model files (using --json) ---"
+          dvc status -r mycloudremote models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v --json || \
+            echo "dvc status -r mycloudremote --json failed or showed unexpected status. Output above."
 
           echo "--- Attempting dvc fetch for specific model files ---"
           # Removed --force; it's not a valid option for dvc fetch
