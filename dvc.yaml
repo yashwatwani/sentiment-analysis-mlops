@@ -5,6 +5,14 @@ stages:
       - data/raw/reviews.csv
       - src/preprocess.py
       - src/train.py
+      - params.yaml  # Add params.yaml as a general dependency
+    params: # Specify which parameters from params.yaml affect this stage
+      - data_split.test_split_ratio
+      - data_split.random_seed_split
+      - featurization.tfidf_max_features
+      - training.logreg_solver
+      - training.logreg_C
+      - training.random_seed_model
     outs:
       - models/sentiment_model.joblib
       - models/tfidf_vectorizer.joblib

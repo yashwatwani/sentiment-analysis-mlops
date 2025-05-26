@@ -12,15 +12,15 @@ import mlflow
 import mlflow.sklearn
 import matplotlib.pyplot as plt
 import seaborn as sns
+import yaml  # For loading params.yaml
 
-# Define DVC output paths (still needed for DVC pipeline)
+# Define DVC output paths
 RAW_DATA_PATH = "data/raw/reviews.csv"
 MODEL_DIR = "models"
+PARAMS_FILE = "params.yaml" # Define path to params file
 
-# --- MLflow Model Registry Configuration ---
-# This is the name your model will be registered under
+# MLflow Model Registry Configuration
 REGISTERED_MODEL_NAME = "SentimentAnalysisModelIMDB"
-
 
 # MLflow Experiment Setup
 EXPERIMENT_NAME = "SentimentAnalysisIMDB"
@@ -37,7 +37,7 @@ except Exception as e:
 
 def plot_confusion_matrix_mlflow(
         cm, class_names, filename="confusion_matrix.png"):
-    """Helper function to plot and log confusion matrix to MLflow"""
+    # ... (this function remains the same as before) ...
     plt.figure(figsize=(8, 6))
     sns.heatmap(
         cm, annot=True, fmt='d', cmap='Blues',
@@ -59,21 +59,41 @@ def plot_confusion_matrix_mlflow(
 
 def train_model():
     print(
-        "Starting model training with MLflow server logging "
-        "and model registration..."
+        "Starting model training with MLflow server logging, "
+        "model registration, and params from params.yaml..."
     )
     print(f"MLflow Tracking URI: {mlflow.get_tracking_uri()}")
     print(f"MLflow Artifact URI: {mlflow.get_artifact_uri()}")
+
+    # --- Load parameters from params.yaml ---
+    try:
+        with open(PARAMS_FILE, 'r') as f:
+            params = yaml.safe_load(f)
+        print(f"Loaded parameters from {PARAMS_FILE}: {params}")
+    except FileNotFoundError:
+        print(f"ERROR: {PARAMS_FILE} not found. Using default script parameters.")
+        # Define default params here if file not found, or exit
+        params = { # Fallback default parameters
+            'data_split': {'test_split_ratio': 0.2, 'random_seed_split': 42},
+            'featurization': {'tfidf_max_features': 5000},
+            'training': {'logreg_solver': 'liblinear', 'logreg_C': 1.0, 'random_seed_model': 42}
+        }
+    except Exception as e:
+        print(f"Error loading {PARAMS_FILE}: {e}. Using default script parameters.")
+        # Define default params here or exit
+        params = { # Fallback default parameters
+            'data_split': {'test_split_ratio': 0.2, 'random_seed_split': 42},
+            'featurization': {'tfidf_max_features': 5000},
+            'training': {'logreg_solver': 'liblinear', 'logreg_C': 1.0, 'random_seed_model': 42}
+        }
+    # -----------------------------------------
 
     if mlflow.active_run():
         active_run_id = mlflow.active_run().info.run_id
         print(f"Warning: Found active MLflow run: {active_run_id}. Ending it.")
         mlflow.end_run()
-        print("DEBUG: Active run ended.")
 
-    print("DEBUG: About to start new MLflow run...")
     with mlflow.start_run() as run:
-        print("DEBUG: New MLflow run started.")
         run_id = run.info.run_id
         print(f"MLflow Run ID: {run_id}")
         mlflow.set_tag(
@@ -81,64 +101,60 @@ def train_model():
             f"training_run_{pd.Timestamp.now():%Y%m%d_%H%M%S}"
         )
 
-        test_split_ratio = 0.2
-        random_seed_split = 42
-        tfidf_max_features = 5000
-        logreg_solver = 'liblinear'
-        random_seed_model = 42
+        # --- Use parameters from loaded params ---
+        test_split_ratio = params['data_split']['test_split_ratio']
+        random_seed_split = params['data_split']['random_seed_split']
+        tfidf_max_features = params['featurization']['tfidf_max_features']
+        logreg_solver = params['training']['logreg_solver']
+        logreg_C = params['training']['logreg_C'] # New parameter
+        random_seed_model = params['training']['random_seed_model']
 
-        mlflow.log_param("test_split_ratio", test_split_ratio)
-        mlflow.log_param("random_seed_split", random_seed_split)
-        mlflow.log_param("tfidf_max_features", tfidf_max_features)
-        mlflow.log_param("logreg_solver", logreg_solver)
-        mlflow.log_param("random_seed_model", random_seed_model)
+        # Log all parameters (params is a nested dict, MLflow can log it)
+        mlflow.log_params(params) 
+        # Or log them individually if you prefer more control over naming in UI
+        # mlflow.log_param("test_split_ratio", test_split_ratio)
+        # ... (etc. for all params) ...
+        print(f"Using parameters: C={logreg_C}, max_features={tfidf_max_features}")
+        # -----------------------------------------
 
         os.makedirs(MODEL_DIR, exist_ok=True)
-
-        print(f"DEBUG: Loading data from {RAW_DATA_PATH}...")
         df = pd.read_csv(
             RAW_DATA_PATH, sep='\t', header=None,
             names=['review', 'sentiment']
         )
-        print(f"DEBUG: Data loaded. Shape: {df.shape}")
-
-        print("DEBUG: Preprocessing text data...")
         df['review'] = df['review'].astype(str)
         df['processed_review'] = df['review'].apply(preprocess_text)
-        print("DEBUG: Text preprocessing complete.")
 
         X = df['processed_review']
         y = df['sentiment']
 
-        print("DEBUG: Splitting data into train and test sets...")
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_split_ratio,
             random_state=random_seed_split, stratify=y
         )
-        print(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
         mlflow.log_metric("train_set_size", len(X_train))
         mlflow.log_metric("test_set_size", len(X_test))
 
-        print("DEBUG: Vectorizing text using TF-IDF...")
         vectorizer = TfidfVectorizer(max_features=tfidf_max_features)
         X_train_tfidf = vectorizer.fit_transform(X_train)
         X_test_tfidf = vectorizer.transform(X_test)
-        print("DEBUG: Text vectorization complete.")
 
-        print("DEBUG: Training Logistic Regression model...")
+        # Use logreg_C in model initialization
         model = LogisticRegression(
-            solver=logreg_solver, random_state=random_seed_model
+            C=logreg_C, # Using the parameter
+            solver=logreg_solver,
+            random_state=random_seed_model
         )
         model.fit(X_train_tfidf, y_train)
-        print("DEBUG: Model training complete.")
+        print("Model training complete.")
 
-        print("Evaluating model...")
         y_pred = model.predict(X_test_tfidf)
         accuracy = accuracy_score(y_test, y_pred)
         mlflow.log_metric("accuracy", accuracy)
         print(f"Model Accuracy: {accuracy:.4f}")
 
         report = classification_report(y_test, y_pred, output_dict=True)
+        # ... (metric logging for report remains the same) ...
         for class_or_avg, metrics_dict in report.items():
             if isinstance(metrics_dict, dict):
                 for metric_name, metric_value in metrics_dict.items():
@@ -155,8 +171,9 @@ def train_model():
             classification_report(y_test, y_pred)
         )
 
+
         cm = confusion_matrix(y_test, y_pred)
-        class_names = ['negative', 'positive']  # Assuming 0 neg, 1 pos
+        class_names = ['negative', 'positive']
         plot_confusion_matrix_mlflow(
             cm, class_names, filename="confusion_matrix.png"
         )
@@ -169,24 +186,19 @@ def train_model():
         joblib.dump(vectorizer, dvc_vectorizer_path)
         print("Model and vectorizer saved for DVC.")
 
-        print("Logging model to MLflow Tracking Server...")
         mlflow.sklearn.log_model(
             sk_model=model,
-            # Subdirectory in MLflow run's artifact store
             artifact_path="sentiment-model-sklearn",
             registered_model_name=REGISTERED_MODEL_NAME
         )
         print(
-            f"Model registered in MLflow Model Registry as '{REGISTERED_MODEL_NAME}'."
+          f"Model registered in MLflow Model Registry as '{REGISTERED_MODEL_NAME}'."
         )
-
         mlflow.sklearn.log_model(
             sk_model=vectorizer,
-            # Subdirectory for vectorizer
             artifact_path="tfidf-vectorizer-sklearn",
         )
         print("Vectorizer logged as an artifact/model to MLflow.")
-
         print("Training process finished. MLflow run logged to server.")
         mlflow.set_tag("status", "completed")
 

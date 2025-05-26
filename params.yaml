@@ -1,0 +1,13 @@
+# params.yaml
+
+data_split:
+  test_split_ratio: 0.2
+  random_seed_split: 42
+
+featurization:
+  tfidf_max_features: 5000
+
+training:
+  logreg_solver: 'liblinear'
+  logreg_C: 0.5 # Regularization strength for Logistic Regression
+  random_seed_model: 42

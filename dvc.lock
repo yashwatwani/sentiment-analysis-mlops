@@ -7,20 +7,32 @@ stages:
       hash: md5
       md5: ccea809cf06938e64b783737778f5ca0
       size: 85285
+    - path: params.yaml
+      hash: md5
+      md5: b43f2d89a61d468ca994bd877300bb94
+      size: 247
     - path: src/preprocess.py
       hash: md5
       md5: 94170ab99d251f3b82946fcde957524c
       size: 1246
     - path: src/train.py
       hash: md5
-      md5: b47837ec03abc195822d5f173fe94219
-      size: 7206
+      md5: 5c9df8a266ea3446d3e1a467f243a026
+      size: 8051
+    params:
+      params.yaml:
+        data_split.random_seed_split: 42
+        data_split.test_split_ratio: 0.2
+        featurization.tfidf_max_features: 5000
+        training.logreg_C: 0.5
+        training.logreg_solver: liblinear
+        training.random_seed_model: 42
     outs:
     - path: models/sentiment_model.joblib
       hash: md5
-      md5: d8a64998cc48987dac25bc76947d10d5
+      md5: d7194ded349ca900001b70997e9456c1
       size: 17995
     - path: models/tfidf_vectorizer.joblib
       hash: md5
-      md5: 36a7f66db1776b15a7f7d38e16722a88
+      md5: 478a44bbe2b77f3fb0f58fa4852c7f1b
       size: 77575
