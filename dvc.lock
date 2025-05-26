@@ -13,14 +13,14 @@ stages:
       size: 1264
     - path: src/train.py
       hash: md5
-      md5: 401e34c5d0b2189e27d24c93886c084e
-      size: 6639
+      md5: a27349e6668810b832715a2f3871873b
+      size: 7884
     outs:
     - path: models/sentiment_model.joblib
       hash: md5
-      md5: 144649317d186837df2f5acbc071def5
+      md5: d8a64998cc48987dac25bc76947d10d5
       size: 17995
     - path: models/tfidf_vectorizer.joblib
       hash: md5
-      md5: cef1151e2b4fe35c6d36a51f2fec4e98
-      size: 77574
+      md5: b209572ba4c67c23a53570ce664bdb0a
+      size: 77575
