@@ -1,3 +1,4 @@
+"""This module contains the API for sentiment analysis."""
 from flask import Flask, request, jsonify
 import os
 from src.preprocess import preprocess_text
@@ -29,12 +30,14 @@ vectorizer = None  # Will be loaded from DVC path for this iteration
 
 
 def get_absolute_path(relative_path):
+    """Constructs an absolute path from a path relative to project root."""
     base_dir = os.path.dirname(os.path.abspath(__file__))  # src/
     project_root = os.path.dirname(base_dir)  # project root
     return os.path.join(project_root, relative_path)
 
 
 def load_models_at_startup():
+    """Loads the model from MLflow Registry (with DVC fallback) and vectorizer from DVC."""
     global model, vectorizer
 
     # 1. Attempt to load main model from MLflow Model Registry
@@ -113,18 +116,26 @@ load_models_at_startup()
 
 @app.route('/')
 def home():
+    """Home endpoint to check API status and model loading."""
     if model and vectorizer:
         return "Sentiment Analysis API is running! Model and Vectorizer loaded. Use /predict."
     elif model:
-        return "Sentiment Analysis API is running! Model loaded, Vectorizer FAILED. API may not work."
+        return (
+            "Sentiment Analysis API is running! Model loaded,"
+            " Vectorizer FAILED. API may not work."
+        )
     elif vectorizer:
-        return "Sentiment Analysis API is running! Vectorizer loaded, Model FAILED. API may not work."
+        return (
+            "Sentiment Analysis API is running!"
+            " Vectorizer loaded, Model FAILED. API may not work."
+        )
     else:
         return "Sentiment Analysis API is running! CRITICAL: Model and Vectorizer FAILED to load."
 
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    """Predicts sentiment from input text."""
     if model is None or vectorizer is None:
         return jsonify({
             "error": "Model or vectorizer not loaded correctly. "
@@ -132,19 +143,23 @@ def predict():
         }), 500
 
     try:
-        data = request.get_json(silent=True) 
-        if data is None: # More specific check for malformed JSON when silent=True
+        data = request.get_json(silent=True)
+        if data is None:  # More specific check for malformed JSON
             app.logger.warning("Malformed JSON payload received.")
             return jsonify({"error": "Malformed JSON payload."}), 400
-        
-        if 'text' not in data: # Check for 'text' key if data is a dict
+
+        if 'text' not in data:  # Check for 'text' key if data is a dict
             app.logger.warning("Missing 'text' key in JSON payload.")
-            return jsonify({"error": "Invalid input. JSON with 'text' key required."}), 400
+            return jsonify(
+                {"error": "Invalid input. JSON with 'text' key required."}
+            ), 400
 
         review_text = data['text']
         if not isinstance(review_text, str) or not review_text.strip():
             app.logger.warning("Empty or non-string 'text' value received.")
-            return jsonify({"error": "'text' must be a non-empty string."}), 400
+            return jsonify(
+                {"error": "'text' must be a non-empty string."}
+            ), 400
 
         app.logger.info(f"Received text for prediction: '{review_text}'")
         processed_text = preprocess_text(review_text)
@@ -153,15 +168,20 @@ def predict():
 
         prediction_numeric = None
         # Heuristic for MLflow pyfunc
-        if hasattr(model, 'predict') and callable(getattr(model, 'predict')) and hasattr(model, '_model_impl'):
+        if (hasattr(model, 'predict') and
+                callable(getattr(model, 'predict')) and
+                hasattr(model, '_model_impl')):  # This multi-line if was okay
             app.logger.info("Predicting using MLflow pyfunc model.")
             # Assuming 'text' is the expected input column
             input_df = pd.DataFrame([processed_text], columns=['text'])
             prediction_result = model.predict(input_df)
 
-            if isinstance(prediction_result, pd.DataFrame) and not prediction_result.empty:
+            if isinstance(prediction_result, pd.DataFrame) and \
+               not prediction_result.empty:
                 prediction_numeric = prediction_result.iloc[0, 0]
-            elif isinstance(prediction_result, (list, pd.Series)) and len(prediction_result) > 0:
+            # Alternative hanging indent (also usually PEP 8 compliant)
+            elif (isinstance(prediction_result, (list, pd.Series)) and
+                    len(prediction_result) > 0):
                 prediction_numeric = prediction_result[0]
             else:
                 if not isinstance(prediction_result, int):
@@ -194,10 +214,13 @@ def predict():
         }
         return jsonify(response), 200
 
-    except Exception as e: # This will now only catch truly unexpected errors in your prediction logic
-        app.logger.error(f"An unexpected server error occurred during prediction: {e}")
+    except Exception as e:  # Catches other unexpected errors
+        app.logger.error(
+            f"An unexpected server error occurred during prediction: {e}"
+        )
         app.logger.error(traceback.format_exc())
-        return jsonify({"error": "An internal server error occurred.", "details": "Please try again later."}), 500
+        return jsonify({"error": "An internal server error occurred.",
+                        "details": "Please try again later."}), 500
 
 
 if __name__ == '__main__':

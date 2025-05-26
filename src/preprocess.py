@@ -1,3 +1,4 @@
+"This preprocess the data"
 import re
 import nltk
 from nltk.corpus import stopwords
@@ -35,12 +36,12 @@ def preprocess_text(text):
 
 if __name__ == '__main__':
     # Example usage
-    sample_text_1 = (
+    SAMPLE_TEXT_1 = (
         "This is a sample sentence, with 123 numbers and punctuation!"
     )
-    print(f"Original: {sample_text_1}")
-    print(f"Processed: {preprocess_text(sample_text_1)}")
+    print(f"Original: {SAMPLE_TEXT_1}")
+    print(f"Processed: {preprocess_text(SAMPLE_TEXT_1)}")
 
-    sample_text_2 = "I loved the movie, it was fantastic and great fun!!!"
-    print(f"Original: {sample_text_2}")
-    print(f"Processed: {preprocess_text(sample_text_2)}")
+    SAMPLE_TEXT_2 = "I loved the movie, it was fantastic and great fun!!!"
+    print(f"Original: {SAMPLE_TEXT_2}")
+    print(f"Processed: {preprocess_text(SAMPLE_TEXT_2)}")

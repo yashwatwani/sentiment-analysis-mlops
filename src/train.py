@@ -1,3 +1,4 @@
+"train the model"
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -7,7 +8,7 @@ from sklearn.metrics import (accuracy_score,
                              confusion_matrix)
 import joblib
 import os
-from preprocess import preprocess_text
+from src.preprocess import preprocess_text
 import mlflow
 import mlflow.sklearn
 import matplotlib.pyplot as plt
