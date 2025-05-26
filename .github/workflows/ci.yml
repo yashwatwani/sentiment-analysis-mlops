@@ -60,8 +60,10 @@ jobs:
           flake8 src/
 
       - name: Run Tests with Pytest
+        env:
+          PYTHONPATH: ${{ github.workspace }} 
         run: |
-          echo "Running Pytest..."
+          echo "Running Pytest with PYTHONPATH=${PYTHONPATH}"
           pytest tests/ -v
 
   build_docker_and_push_to_ar:
