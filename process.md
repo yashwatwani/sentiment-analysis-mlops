@@ -176,7 +176,6 @@ jobs:
 
       - name: Print Cloud Run Service URL
         if: steps.deploy_cloud_run.outputs.url 
-        run: |
-          echo "Service deployed to: ${{ steps.deploy_cloud_run.outputs.url }}"
+        run: echo "Service deployed to: ${{ steps.deploy_cloud_run.outputs.url }}"
 
 # Ensure a final newline character below this line

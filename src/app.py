@@ -1,98 +1,128 @@
 from flask import Flask, request, jsonify
-# import joblib # No longer loading directly with joblib from DVC path for primary model
 import os
 from preprocess import preprocess_text
 import traceback
 import mlflow
+import joblib # Ensure joblib is imported for fallback
+import pandas as pd # Ensure pandas is imported for pyfunc input
 
 # --- Configuration ---
-# MLflow Model Registry configuration
-# Ensure MLFLOW_TRACKING_URI is set in the environment where this app runs
-# e.g., export MLFLOW_TRACKING_URI='http://localhost:5002'
+MLFLOW_TRACKING_URI_ENV = os.getenv("MLFLOW_TRACKING_URI") # Get from environment
 REGISTERED_MODEL_NAME = "SentimentAnalysisModelIMDB"
-MODEL_STAGE = "Staging"  # Or "Production" - the stage to load
+MODEL_STAGE = "Staging"
 
-# DVC path for vectorizer (we'll still load this from DVC for now for simplicity)
-# Alternatively, you can log/register and load vectorizer from MLflow too.
-MODEL_DIR_DVC = "models" # DVC tracked models directory
+MODEL_DIR_DVC = "models" 
+SENTIMENT_MODEL_PATH_DVC = os.path.join(MODEL_DIR_DVC, "sentiment_model.joblib")
 VECTORIZER_PATH_DVC = os.path.join(MODEL_DIR_DVC, "tfidf_vectorizer.joblib")
-
 
 # --- Initialize Flask App ---
 app = Flask(__name__)
 
 # --- Load Model and Vectorizer ---
 model = None
-vectorizer = None # Will be loaded from DVC path for this iteration
+vectorizer = None
 
-def load_model_from_registry():
-    global model
-    model_uri = f"models:/{REGISTERED_MODEL_NAME}/{MODEL_STAGE}"
-    app.logger.info(f"Attempting to load model from MLflow Registry: {model_uri}")
-    try:
-        model = mlflow.pyfunc.load_model(model_uri)
-        app.logger.info(f"Model '{REGISTERED_MODEL_NAME}' version for stage '{MODEL_STAGE}' loaded successfully from MLflow Registry.")
-    except Exception as e:
-        app.logger.error(f"Failed to load model from MLflow Registry: {model_uri}")
-        app.logger.error(f"Error: {e}")
-        app.logger.error(traceback.format_exc())
-        model = None # Ensure model is None if loading fails
+def get_absolute_path(relative_path):
+    base_dir = os.path.dirname(os.path.abspath(__file__)) # src/
+    project_root = os.path.dirname(base_dir) # project root
+    return os.path.join(project_root, relative_path)
 
-def load_vectorizer_from_dvc():
-    global vectorizer
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(base_dir)
-        actual_vectorizer_path = os.path.join(project_root, VECTORIZER_PATH_DVC)
+def load_models_at_startup():
+    global model, vectorizer
 
-        if not os.path.exists(actual_vectorizer_path):
-            app.logger.error(
-                f"Vectorizer file not found at {actual_vectorizer_path}. "
-                f"Ensure 'dvc repro' or 'dvc pull {VECTORIZER_PATH_DVC}' has been run."
+    # 1. Attempt to load main model from MLflow Model Registry
+    if MLFLOW_TRACKING_URI_ENV:
+        app.logger.info(f"Using MLflow Tracking URI: {MLFLOW_TRACKING_URI_ENV}")
+        model_uri = f"models:/{REGISTERED_MODEL_NAME}/{MODEL_STAGE}"
+        app.logger.info(f"Attempting to load model from MLflow Registry: {model_uri}")
+        try:
+            # Set tracking URI for this loading operation if not already globally set by env var
+            # for the current Python process (though env var is better)
+            # mlflow.set_tracking_uri(MLFLOW_TRACKING_URI_ENV) # Usually not needed if env var is picked up
+            model = mlflow.pyfunc.load_model(model_uri)
+            app.logger.info(
+                f"Model '{REGISTERED_MODEL_NAME}' version for stage '{MODEL_STAGE}' "
+                "loaded successfully from MLflow Registry."
             )
-            return # vectorizer remains None
+        except Exception as e:
+            app.logger.warning(
+                f"Failed to load model from MLflow Registry (URI: {model_uri}). Error: {e}"
+            )
+            model = None # Ensure model is None if registry load fails
+    else:
+        app.logger.warning(
+            "MLFLOW_TRACKING_URI not set. Skipping load from MLflow Registry."
+        )
 
-        app.logger.info(f"Loading vectorizer from DVC path: {actual_vectorizer_path}")
-        # Need to import joblib here as it's locally used
-        import joblib 
-        vectorizer = joblib.load(actual_vectorizer_path)
-        app.logger.info("Vectorizer loaded successfully from DVC path.")
+    # 2. Fallback: If model not loaded from registry, load from DVC path
+    if model is None:
+        actual_model_path_dvc = get_absolute_path(SENTIMENT_MODEL_PATH_DVC)
+        app.logger.info(
+            f"Attempting to load model from DVC path (fallback): {actual_model_path_dvc}"
+        )
+        try:
+            if not os.path.exists(actual_model_path_dvc):
+                app.logger.error(
+                    f"DVC model file not found at {actual_model_path_dvc}."
+                )
+            else:
+                model = joblib.load(actual_model_path_dvc)
+                app.logger.info(
+                    "Model loaded successfully from DVC path (fallback)."
+                )
+        except Exception as e:
+            app.logger.error(
+                f"Failed to load model from DVC path. Error: {e}"
+            )
+            app.logger.error(traceback.format_exc())
+            model = None # Ensure model is None if DVC load also fails
 
-    except Exception as e:
-        app.logger.error(f"An unexpected error occurred during vectorizer loading: {e}")
-        app.logger.error(traceback.format_exc())
-        vectorizer = None # Ensure vectorizer is None
-
-# Load models at startup
-if not os.getenv("MLFLOW_TRACKING_URI"):
-    app.logger.warning(
-        "MLFLOW_TRACKING_URI is not set. MLflow will use local 'mlruns' "
-        "and may not find the registered model from the server."
+    # 3. Load vectorizer from DVC path (as before)
+    actual_vectorizer_path_dvc = get_absolute_path(VECTORIZER_PATH_DVC)
+    app.logger.info(
+        f"Loading vectorizer from DVC path: {actual_vectorizer_path_dvc}"
     )
-else:
-    app.logger.info(f"Using MLflow Tracking URI: {os.getenv('MLFLOW_TRACKING_URI')}")
-    
-load_model_from_registry()
-load_vectorizer_from_dvc() # Continue loading vectorizer from DVC path
+    try:
+        if not os.path.exists(actual_vectorizer_path_dvc):
+            app.logger.error(
+                f"Vectorizer file not found at {actual_vectorizer_path_dvc}."
+            )
+        else:
+            vectorizer = joblib.load(actual_vectorizer_path_dvc)
+            app.logger.info("Vectorizer loaded successfully from DVC path.")
+    except Exception as e:
+        app.logger.error(
+            f"Failed to load vectorizer from DVC path. Error: {e}"
+        )
+        app.logger.error(traceback.format_exc())
+        vectorizer = None
+
+# Load models when app starts
+load_models_at_startup()
 
 
 @app.route('/')
 def home():
-    return "Sentiment Analysis API is running! Use the /predict endpoint. Model loaded from Registry."
+    if model and vectorizer:
+        return "Sentiment Analysis API is running! Model and Vectorizer loaded. Use /predict."
+    elif model:
+        return "Sentiment Analysis API is running! Model loaded, Vectorizer FAILED. API may not work."
+    elif vectorizer:
+        return "Sentiment Analysis API is running! Vectorizer loaded, Model FAILED. API may not work."
+    else:
+        return "Sentiment Analysis API is running! CRITICAL: Model and Vectorizer FAILED to load."
 
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    # No 'global model, vectorizer' needed as we access module-level variables
-
-    if model is None: # Check only model, vectorizer check remains as is or can be combined
-        return jsonify({"error": "Sentiment model not loaded from MLflow Registry. Check server logs."}), 500
-    if vectorizer is None:
-        return jsonify({"error": "Vectorizer not loaded from DVC path. Check server logs."}), 500
+    if model is None or vectorizer is None:
+        return jsonify({
+            "error": "Model or vectorizer not loaded correctly. Check server logs."
+        }), 500
     
-    # ... (rest of the predict function remains the same as before) ...
     try:
         data = request.get_json()
+        # ... (input validation for data and data['text'] remains the same)
         if not data or 'text' not in data:
             return jsonify({"error": "Invalid input. JSON with 'text' key required."}), 400
 
@@ -105,52 +135,37 @@ def predict():
         app.logger.info(f"Processed text: '{processed_text}'")
         vectorized_text = vectorizer.transform([processed_text])
         
-        # If using mlflow.pyfunc.load_model, the 'model' is a PyFuncModel wrapper.
-        # It has a predict method that takes a pandas DataFrame.
-        input_df = pd.DataFrame([processed_text], columns=['text']) # Or appropriate column name
-        prediction_result = model.predict(input_df)
+        prediction_numeric = None
+        # Check if the loaded model is an MLflow pyfunc model or a raw scikit-learn model
+        if hasattr(model, 'predict') and callable(getattr(model, 'predict')) and hasattr(model, '_model_impl'): # Heuristic for MLflow pyfunc
+            app.logger.info("Predicting using MLflow pyfunc model.")
+            input_df = pd.DataFrame([processed_text], columns=['text']) # Assuming 'text' is the expected input column
+            prediction_result = model.predict(input_df)
+            
+            if isinstance(prediction_result, pd.DataFrame) and not prediction_result.empty:
+                prediction_numeric = prediction_result.iloc[0,0]
+            elif isinstance(prediction_result, (list, pd.Series)) and len(prediction_result) > 0:
+                prediction_numeric = prediction_result[0]
+            else:
+                prediction_numeric = int(prediction_result) if not isinstance(prediction_result, int) else prediction_result
+            prediction_numeric = int(prediction_numeric)
 
-        # Assuming the pyfunc model directly returns the class (0 or 1) or a structure
-        # If it returns a DataFrame with a prediction column:
-        # prediction_numeric = prediction_result['prediction_column_name'].iloc[0]
-        # If it directly returns the prediction (e.g., for scikit-learn models loaded via pyfunc):
-        if isinstance(prediction_result, pd.DataFrame) and not prediction_result.empty:
-             # Assuming the prediction is in the first column if it's a DataFrame
-            prediction_numeric = prediction_result.iloc[0,0]
-        elif isinstance(prediction_result, (list, pd.Series)) and len(prediction_result) > 0:
-            prediction_numeric = prediction_result[0]
-        else: # Fallback if unsure about pyfunc output structure for this model type
-            app.logger.warning(f"Unexpected prediction result type or empty: {type(prediction_result)}")
-            # Try to get probabilities if available from the underlying model if pyfunc doesn't give them directly
-            # This part might need adjustment based on how your sklearn model is wrapped by pyfunc
-            # For direct sklearn, we used model.predict_proba and model.predict
-            # For now, we'll assume prediction_numeric is obtained correctly.
-            # We might lose direct access to predict_proba unless the pyfunc model exposes it
-            # or if we load the raw sklearn model from the logged artifact instead of pyfunc.
-            # For simplicity, let's just use the prediction from pyfunc.
-            # We would need to re-think probability access if strictly needed from pyfunc model.
-            # For now, let's create dummy probabilities if we can't get them directly.
-            prediction_numeric = int(prediction_numeric) if not isinstance(prediction_numeric, int) else prediction_numeric
-            dummy_proba_positive = 0.9 if prediction_numeric == 1 else 0.1
-            prediction_proba = [[1-dummy_proba_positive, dummy_proba_positive]]
-
+        elif hasattr(model, 'predict'): # Assume it's a scikit-learn like model (from DVC fallback)
+            app.logger.info("Predicting using DVC/joblib loaded scikit-learn model.")
+            prediction_numeric = model.predict(vectorized_text)[0]
+            # prediction_proba = model.predict_proba(vectorized_text) # If you want probabilities for this path
+        else:
+            app.logger.error("Loaded model does not have a recognized predict method.")
+            return jsonify({"error": "Model loaded but cannot perform prediction."}), 500
 
         sentiment_label = "positive" if prediction_numeric == 1 else "negative"
-        
-        app.logger.info(
-            f"Prediction from Registry Model: {sentiment_label}"
-            # f", Probabilities: {prediction_proba[0]}" # May not have direct proba from pyfunc
-        )
+        app.logger.info(f"Prediction: {sentiment_label}")
 
         response = {
             "input_text": review_text,
             "processed_text": processed_text,
             "sentiment_label": sentiment_label,
-            "prediction_numeric": int(prediction_numeric),
-            # "probabilities": { # Commenting out direct probabilities if pyfunc doesn't provide them easily
-            #     "negative": float(prediction_proba[0][0]),
-            #     "positive": float(prediction_proba[0][1])
-            # }
+            "prediction_numeric": int(prediction_numeric)
         }
         return jsonify(response), 200
 
@@ -161,16 +176,9 @@ def predict():
 
 
 if __name__ == '__main__':
-    # For direct execution, ensure MLFLOW_TRACKING_URI is set, e.g.:
-    # export MLFLOW_TRACKING_URI='http://localhost:5002'
-    # And vectorizer from DVC is available
-    # python src/app.py
     if model is None or vectorizer is None:
-        print(
-            "CRITICAL: Model from Registry or Vectorizer from DVC failed to load. "
-            "The API will not work correctly."
-        )
+        print("CRITICAL: Model or Vectorizer failed to load. API will not function correctly.")
     else:
-        print("Model from Registry and Vectorizer from DVC loaded. Starting Flask server...")
-        port = int(os.environ.get("PORT", 5001))
-        app.run(host='0.0.0.0', port=port, debug=False) # Set debug=False
+        print("Model and Vectorizer loaded. Starting Flask server...")
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host='0.0.0.0', port=port, debug=False)
