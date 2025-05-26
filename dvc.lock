@@ -17,8 +17,8 @@ stages:
       size: 1246
     - path: src/train.py
       hash: md5
-      md5: 5c9df8a266ea3446d3e1a467f243a026
-      size: 8051
+      md5: 0a53da5b3062b7949d909381a7dfbea6
+      size: 8054
     params:
       params.yaml:
         data_split.random_seed_split: 42
@@ -34,5 +34,5 @@ stages:
       size: 17995
     - path: models/tfidf_vectorizer.joblib
       hash: md5
-      md5: 478a44bbe2b77f3fb0f58fa4852c7f1b
+      md5: fd83b17df60393c6cae3b6b55773a780
       size: 77575
