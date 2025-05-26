@@ -1,7 +1,7 @@
 """This module contains the API for sentiment analysis."""
 from flask import Flask, request, jsonify
 import os
-from preprocess import preprocess_text
+from .preprocess import preprocess_text
 import traceback
 import mlflow
 import joblib  # Ensure joblib is imported for fallback

@@ -8,7 +8,7 @@ from sklearn.metrics import (accuracy_score,
                              confusion_matrix)
 import joblib
 import os
-from preprocess import preprocess_text
+from .preprocess import preprocess_text
 import mlflow
 import mlflow.sklearn
 import matplotlib.pyplot as plt
