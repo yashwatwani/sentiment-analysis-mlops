@@ -18,25 +18,26 @@ RAW_DATA_PATH = "data/raw/reviews.csv"
 MODEL_DIR = "models"
 
 # --- MLflow Model Registry Configuration ---
-# This is the name your model will be registered under in the MLflow Model Registry
+# This is the name your model will be registered under
 REGISTERED_MODEL_NAME = "SentimentAnalysisModelIMDB"
-# ------------------------------------------
 
-# MLflow Experiment Setup (this will now log to your server if MLFLOW_TRACKING_URI is set)
-EXPERIMENT_NAME = "SentimentAnalysisIMDB" 
-# If MLFLOW_TRACKING_URI is set, mlflow.set_experiment will use it.
-# Otherwise, it defaults to local 'mlruns'.
+
+# MLflow Experiment Setup
+EXPERIMENT_NAME = "SentimentAnalysisIMDB"
 try:
     experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
     if experiment is None:
         mlflow.create_experiment(EXPERIMENT_NAME)
     mlflow.set_experiment(EXPERIMENT_NAME)
 except Exception as e:
-    print(f"MLflow experiment setup error (continuing with default behavior): {e}")
+    print(
+        f"MLflow experiment setup error (continuing with default behavior): {e}"
+    )
 
 
 def plot_confusion_matrix_mlflow(
         cm, class_names, filename="confusion_matrix.png"):
+    """Helper function to plot and log confusion matrix to MLflow"""
     plt.figure(figsize=(8, 6))
     sns.heatmap(
         cm, annot=True, fmt='d', cmap='Blues',
@@ -57,19 +58,22 @@ def plot_confusion_matrix_mlflow(
 
 
 def train_model():
-    print("Starting model training with MLflow server logging and model registration...")
-    # Ensure MLFLOW_TRACKING_URI is set in the environment running this script
-    # e.g., export MLFLOW_TRACKING_URI=http://localhost:5002
+    print(
+        "Starting model training with MLflow server logging "
+        "and model registration..."
+    )
     print(f"MLflow Tracking URI: {mlflow.get_tracking_uri()}")
     print(f"MLflow Artifact URI: {mlflow.get_artifact_uri()}")
 
-    # --- Ensure no previous run is active ---
     if mlflow.active_run():
-        print(f"Warning: Found active MLflow run: {mlflow.active_run().info.run_id}. Ending it.")
+        active_run_id = mlflow.active_run().info.run_id
+        print(f"Warning: Found active MLflow run: {active_run_id}. Ending it.")
         mlflow.end_run()
-    # ---------------------------------------
+        print("DEBUG: Active run ended.")
 
+    print("DEBUG: About to start new MLflow run...")
     with mlflow.start_run() as run:
+        print("DEBUG: New MLflow run started.")
         run_id = run.info.run_id
         print(f"MLflow Run ID: {run_id}")
         mlflow.set_tag(
@@ -91,41 +95,42 @@ def train_model():
 
         os.makedirs(MODEL_DIR, exist_ok=True)
 
-        print(f"Loading data from {RAW_DATA_PATH}...")
+        print(f"DEBUG: Loading data from {RAW_DATA_PATH}...")
         df = pd.read_csv(
             RAW_DATA_PATH, sep='\t', header=None,
             names=['review', 'sentiment']
         )
-        print(f"Data loaded successfully. Shape: {df.shape}")
+        print(f"DEBUG: Data loaded. Shape: {df.shape}")
 
-        print("Preprocessing text data...")
+        print("DEBUG: Preprocessing text data...")
         df['review'] = df['review'].astype(str)
         df['processed_review'] = df['review'].apply(preprocess_text)
-        print("Text preprocessing complete.")
+        print("DEBUG: Text preprocessing complete.")
 
         X = df['processed_review']
         y = df['sentiment']
 
-        print("Splitting data into train and test sets...")
+        print("DEBUG: Splitting data into train and test sets...")
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_split_ratio,
             random_state=random_seed_split, stratify=y
         )
+        print(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
         mlflow.log_metric("train_set_size", len(X_train))
         mlflow.log_metric("test_set_size", len(X_test))
 
-        print("Vectorizing text using TF-IDF...")
+        print("DEBUG: Vectorizing text using TF-IDF...")
         vectorizer = TfidfVectorizer(max_features=tfidf_max_features)
         X_train_tfidf = vectorizer.fit_transform(X_train)
         X_test_tfidf = vectorizer.transform(X_test)
-        print("Text vectorization complete.")
+        print("DEBUG: Text vectorization complete.")
 
-        print("Training Logistic Regression model...")
+        print("DEBUG: Training Logistic Regression model...")
         model = LogisticRegression(
             solver=logreg_solver, random_state=random_seed_model
         )
         model.fit(X_train_tfidf, y_train)
-        print("Model training complete.")
+        print("DEBUG: Model training complete.")
 
         print("Evaluating model...")
         y_pred = model.predict(X_test_tfidf)
@@ -151,12 +156,11 @@ def train_model():
         )
 
         cm = confusion_matrix(y_test, y_pred)
-        class_names = ['negative', 'positive']
+        class_names = ['negative', 'positive']  # Assuming 0 neg, 1 pos
         plot_confusion_matrix_mlflow(
             cm, class_names, filename="confusion_matrix.png"
         )
 
-        # DVC output paths (still save for DVC pipeline)
         dvc_model_path = os.path.join(MODEL_DIR, "sentiment_model.joblib")
         dvc_vectorizer_path = os.path.join(
             MODEL_DIR, "tfidf_vectorizer.joblib"
@@ -165,34 +169,32 @@ def train_model():
         joblib.dump(vectorizer, dvc_vectorizer_path)
         print("Model and vectorizer saved for DVC.")
 
-        # --- Log and Register Model with MLflow Model Registry ---
         print("Logging model to MLflow Tracking Server...")
-        # Log the scikit-learn model
         mlflow.sklearn.log_model(
             sk_model=model,
-            artifact_path="sentiment-model-sklearn", # Subdirectory in MLflow run's artifact store
-            registered_model_name=REGISTERED_MODEL_NAME # Register under this name
+            # Subdirectory in MLflow run's artifact store
+            artifact_path="sentiment-model-sklearn",
+            registered_model_name=REGISTERED_MODEL_NAME
         )
-        print(f"Model registered in MLflow Model Registry as '{REGISTERED_MODEL_NAME}'.")
+        print(
+            f"Model registered in MLflow Model Registry as '{REGISTERED_MODEL_NAME}'."
+        )
 
-        # Log the vectorizer as a separate artifact (or model if complex)
-        # For simplicity, we can log it as a generic artifact, or another sklearn model
         mlflow.sklearn.log_model(
             sk_model=vectorizer,
-            artifact_path="tfidf-vectorizer-sklearn", # Subdirectory for vectorizer
-            # Optionally register vectorizer if you want to version it via registry too
-            # registered_model_name="SentimentVectorizerIMDB" 
+            # Subdirectory for vectorizer
+            artifact_path="tfidf-vectorizer-sklearn",
         )
         print("Vectorizer logged as an artifact/model to MLflow.")
-        # ---------------------------------------------------------
 
         print("Training process finished. MLflow run logged to server.")
         mlflow.set_tag("status", "completed")
 
+
 if __name__ == '__main__':
-    # For direct execution, ensure MLFLOW_TRACKING_URI is set, e.g.:
-    # export MLFLOW_TRACKING_URI='http://localhost:5002'
-    # python src/train.py
     if not os.getenv("MLFLOW_TRACKING_URI"):
-        print("Warning: MLFLOW_TRACKING_URI is not set. MLflow will use local 'mlruns' directory.")
+        print(
+            "Warning: MLFLOW_TRACKING_URI is not set. "
+            "MLflow will use local 'mlruns' directory."
+        )
     train_model()

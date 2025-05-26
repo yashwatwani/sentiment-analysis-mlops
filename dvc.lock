@@ -9,12 +9,12 @@ stages:
       size: 85285
     - path: src/preprocess.py
       hash: md5
-      md5: 806268be2f09c17fa7cdba7313e36062
-      size: 1264
+      md5: 94170ab99d251f3b82946fcde957524c
+      size: 1246
     - path: src/train.py
       hash: md5
-      md5: a27349e6668810b832715a2f3871873b
-      size: 7884
+      md5: b47837ec03abc195822d5f173fe94219
+      size: 7206
     outs:
     - path: models/sentiment_model.joblib
       hash: md5
@@ -22,5 +22,5 @@ stages:
       size: 17995
     - path: models/tfidf_vectorizer.joblib
       hash: md5
-      md5: b209572ba4c67c23a53570ce664bdb0a
+      md5: 36a7f66db1776b15a7f7d38e16722a88
       size: 77575

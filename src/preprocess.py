@@ -25,7 +25,7 @@ def preprocess_text(text):
 
     stop_words_set = set(stopwords.words('english'))
     words = text.split()
-    words = [w for w in words if w not in stop_words_set]  # Corrected E713
+    words = [w for w in words if w not in stop_words_set]
 
     stemmer = PorterStemmer()
     words = [stemmer.stem(w) for w in words]
