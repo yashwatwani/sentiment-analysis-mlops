@@ -632,3 +632,82 @@ Every good project starts with setting up version control and a basic structure.
     *   Tested the deployed application by accessing the Cloud Run service URL and sending requests to the `/predict` endpoint, verifying correct functionality.
 
 **Outcome:** A basic Continuous Deployment pipeline is established. Changes merged to the `main` branch that pass all CI checks (linting, testing, DVC pipeline, Docker build & push) are automatically deployed to Google Cloud Run, making the latest version of the application available at a public URL.
+
+------
+
+## Step 11: Enhance Model Management with MLflow Model Registry
+
+**Goal:** Centralize trained models using the MLflow Model Registry for versioning and stage management, and update the API to load models from the registry.
+
+**Key Actions & Files:**
+1.  **Local MLflow Tracking Server Setup:**
+    *   Created directories `mlflow_server_data/backend_store` and `mlflow_server_data/artifact_store` for local server metadata and artifacts.
+    *   Added `mlflow_server_data/` to `.gitignore`.
+    *   Started a local MLflow server (e.g., on port 5002) using `mlflow server --backend-store-uri ./mlflow_server_data/backend_store --default-artifact-root ./mlflow_server_data/artifact_store`.
+
+2.  **Modified Training Script (`src/train.py`):**
+    *   Set a `REGISTERED_MODEL_NAME` (e.g., "SentimentAnalysisModelIMDB").
+    *   Ensured MLflow logs to the server by setting the `MLFLOW_TRACKING_URI` environment variable (e.g., `http://localhost:5002`) before running training.
+    *   Added logic to end any pre-existing active MLflow run before starting a new one to prevent conflicts.
+    *   Used `mlflow.sklearn.log_model()` with the `registered_model_name` parameter to log the trained sentiment model and register its new version in the MLflow Model Registry.
+    *   The TF-IDF vectorizer was also logged as an MLflow artifact/model (though the API currently still loads it from a DVC-tracked file for simplicity in this step).
+    *   DVC outputs (`models/*.joblib` for both model and vectorizer) are still saved to the `models/` directory for DVC pipeline integrity and local API loading of the vectorizer.
+
+3.  **Local Training and Model Registration:**
+    *   Ran `dvc repro -v train_model` (with `MLFLOW_TRACKING_URI` set) to train, log to the MLflow server, and register the model.
+    *   Updated `dvc.lock` as `src/train.py` changed.
+    *   Accessed the MLflow UI (e.g., `http://localhost:5002`), navigated to the "Models" tab, and transitioned the newly registered model version (e.g., Version 1 of "SentimentAnalysisModelIMDB") to the "Staging" stage.
+
+4.  **Modified API Application (`src/app.py`):**
+    *   Configured to load the main sentiment model from the MLflow Model Registry at startup.
+    *   Specified `REGISTERED_MODEL_NAME` and `MODEL_STAGE` (e.g., "Staging") to load.
+    *   Uses `mlflow.pyfunc.load_model(f"models:/{REGISTERED_MODEL_NAME}/{MODEL_STAGE}")`.
+    *   Requires `MLFLOW_TRACKING_URI` to be set in its environment to connect to the MLflow server.
+    *   The TF-IDF vectorizer continues to be loaded from its DVC-tracked `.joblib` file located in the `models/` directory.
+    *   Adjusted the prediction logic to work with the `mlflow.pyfunc` model wrapper (which typically expects a Pandas DataFrame input).
+
+5.  **Local API Testing:**
+    *   Ran the Flask API (`python src/app.py`) with `MLFLOW_TRACKING_URI` set.
+    *   Tested the `/predict` endpoint using `curl`, confirming it loaded the main model from the registry and the vectorizer from the local DVC path, and served predictions successfully.
+
+6.  **Git Commits:**
+    *   Committed changes to `src/train.py`, `src/app.py`, `.gitignore`, and `dvc.lock`.
+
+**Outcome:** The project now utilizes the MLflow Model Registry (via a local server setup) for managing the lifecycle of the main sentiment analysis model. The API is updated to load this model from the registry, while still using DVC for managing the vectorizer's artifact. This setup provides better model version control and governance for the main predictive model.
+
+----------
+
+## Step 12: Parameterizing DVC Pipeline with `params.yaml` & Basic Experimentation
+
+**Goal:** Make the training pipeline configurable by externalizing hyperparameters into `params.yaml`, enabling systematic experimentation tracked by DVC and MLflow.
+
+**Key Actions & Files:**
+1.  **Created `params.yaml`:**
+    *   A `params.yaml` file was created in the project root.
+    *   Defined key hyperparameters and configuration values within this file, such as `data_split.test_split_ratio`, `featurization.tfidf_max_features`, and `training.logreg_C`.
+
+2.  **Updated Python Dependencies:**
+    *   Added `PyYAML` to `requirements.txt` to enable loading YAML files.
+    *   Installed dependencies using `pip install -r requirements.txt`.
+
+3.  **Modified Training Script (`src/train.py`):**
+    *   The script now loads parameters from `params.yaml` at the beginning of the `train_model` function using `yaml.safe_load()`.
+    *   Hardcoded values for parameters like TF-IDF max features, logistic regression solver, C value, and data split configurations were replaced with values read from the loaded `params` dictionary.
+    *   The entire `params` dictionary is logged to MLflow using `mlflow.log_params(params)` for each run, ensuring all configurations are tracked.
+
+4.  **Updated DVC Pipeline Definition (`dvc.yaml`):**
+    *   The `train_model` stage in `dvc.yaml` was updated:
+        *   `params.yaml` was added to the `deps:` list (to track any change in the file).
+        *   A `params:` section was added, listing the specific dot-notation paths to the parameters within `params.yaml` that this stage depends on (e.g., `training.logreg_C`). This allows DVC to identify when a relevant parameter has changed, triggering a re-run of the stage.
+
+5.  **Local Experimentation Workflow:**
+    *   Ran `dvc repro -v train_model` locally. This executed the training with the initial parameters, logged them to MLflow, and updated `dvc.lock`.
+    *   Modified a hyperparameter in `params.yaml` (e.g., changed `training.logreg_C`).
+    *   Re-ran `dvc repro -v train_model`. DVC detected the change in the tracked parameter and re-executed the `train_model` stage.
+    *   A new run appeared in the MLflow UI, with the updated parameter value logged, allowing for comparison between experiments.
+    *   `dvc.lock` was updated again to reflect the outputs from this new run.
+
+6.  **Git Commits:**
+    *   Committed `params.yaml`, the updated `src/train.py`, `dvc.yaml`, `requirements.txt`, and the modified `dvc.lock`.
+
+**Outcome:** The DVC pipeline is now parameterized, allowing for experiments to be driven by changes in `params.yaml`. DVC tracks these parameter dependencies, and MLflow logs the parameters used for each experiment run, facilitating systematic exploration and comparison of different model configurations.

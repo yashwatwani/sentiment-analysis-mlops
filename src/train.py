@@ -17,7 +17,7 @@ import yaml  # For loading params.yaml
 # Define DVC output paths
 RAW_DATA_PATH = "data/raw/reviews.csv"
 MODEL_DIR = "models"
-PARAMS_FILE = "params.yaml" # Define path to params file
+PARAMS_FILE = "params.yaml"  # Define path to params file
 
 # MLflow Model Registry Configuration
 REGISTERED_MODEL_NAME = "SentimentAnalysisModelIMDB"
@@ -73,7 +73,7 @@ def train_model():
     except FileNotFoundError:
         print(f"ERROR: {PARAMS_FILE} not found. Using default script parameters.")
         # Define default params here if file not found, or exit
-        params = { # Fallback default parameters
+        params = {  # Fallback default parameters
             'data_split': {'test_split_ratio': 0.2, 'random_seed_split': 42},
             'featurization': {'tfidf_max_features': 5000},
             'training': {'logreg_solver': 'liblinear', 'logreg_C': 1.0, 'random_seed_model': 42}
@@ -81,7 +81,7 @@ def train_model():
     except Exception as e:
         print(f"Error loading {PARAMS_FILE}: {e}. Using default script parameters.")
         # Define default params here or exit
-        params = { # Fallback default parameters
+        params = {  # Fallback default parameters
             'data_split': {'test_split_ratio': 0.2, 'random_seed_split': 42},
             'featurization': {'tfidf_max_features': 5000},
             'training': {'logreg_solver': 'liblinear', 'logreg_C': 1.0, 'random_seed_model': 42}
@@ -106,11 +106,11 @@ def train_model():
         random_seed_split = params['data_split']['random_seed_split']
         tfidf_max_features = params['featurization']['tfidf_max_features']
         logreg_solver = params['training']['logreg_solver']
-        logreg_C = params['training']['logreg_C'] # New parameter
+        logreg_C = params['training']['logreg_C']  # New parameter
         random_seed_model = params['training']['random_seed_model']
 
         # Log all parameters (params is a nested dict, MLflow can log it)
-        mlflow.log_params(params) 
+        mlflow.log_params(params)
         # Or log them individually if you prefer more control over naming in UI
         # mlflow.log_param("test_split_ratio", test_split_ratio)
         # ... (etc. for all params) ...
@@ -141,7 +141,7 @@ def train_model():
 
         # Use logreg_C in model initialization
         model = LogisticRegression(
-            C=logreg_C, # Using the parameter
+            C=logreg_C,  # Using the parameter
             solver=logreg_solver,
             random_state=random_seed_model
         )
@@ -170,7 +170,6 @@ def train_model():
             "\nClassification Report (formatted):\n",
             classification_report(y_test, y_pred)
         )
-
 
         cm = confusion_matrix(y_test, y_pred)
         class_names = ['negative', 'positive']
