@@ -34,5 +34,5 @@ stages:
       size: 17995
     - path: models/tfidf_vectorizer.joblib
       hash: md5
-      md5: fd83b17df60393c6cae3b6b55773a780
+      md5: 09d60a4fb4dff76d12ffee85e82e6db4
       size: 77575

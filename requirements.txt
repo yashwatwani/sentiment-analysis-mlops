@@ -8,3 +8,6 @@ seaborn
 Flask
 flake8  # Add this line
 pytest
+PyYAML 
+requests
+pytest-flask

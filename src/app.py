@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 import os
-from preprocess import preprocess_text
+from src.preprocess import preprocess_text
 import traceback
 import mlflow
 import joblib  # Ensure joblib is imported for fallback
@@ -132,17 +132,19 @@ def predict():
         }), 500
 
     try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return jsonify({
-                "error": "Invalid input. JSON with 'text' key required."
-            }), 400
+        data = request.get_json(silent=True) 
+        if data is None: # More specific check for malformed JSON when silent=True
+            app.logger.warning("Malformed JSON payload received.")
+            return jsonify({"error": "Malformed JSON payload."}), 400
+        
+        if 'text' not in data: # Check for 'text' key if data is a dict
+            app.logger.warning("Missing 'text' key in JSON payload.")
+            return jsonify({"error": "Invalid input. JSON with 'text' key required."}), 400
 
         review_text = data['text']
         if not isinstance(review_text, str) or not review_text.strip():
-            return jsonify({
-                "error": "'text' must be a non-empty string."
-            }), 400
+            app.logger.warning("Empty or non-string 'text' value received.")
+            return jsonify({"error": "'text' must be a non-empty string."}), 400
 
         app.logger.info(f"Received text for prediction: '{review_text}'")
         processed_text = preprocess_text(review_text)
@@ -192,13 +194,10 @@ def predict():
         }
         return jsonify(response), 200
 
-    except Exception as e:
-        app.logger.error(f"Error during prediction: {e}")
+    except Exception as e: # This will now only catch truly unexpected errors in your prediction logic
+        app.logger.error(f"An unexpected server error occurred during prediction: {e}")
         app.logger.error(traceback.format_exc())
-        return jsonify({
-            "error": "An error occurred during prediction.",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": "An internal server error occurred.", "details": "Please try again later."}), 500
 
 
 if __name__ == '__main__':
