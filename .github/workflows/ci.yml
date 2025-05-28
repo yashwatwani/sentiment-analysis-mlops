@@ -4,12 +4,34 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ] # Deploy job will be skipped for PRs
+    branches: [ main ] 
   workflow_dispatch:
 
 jobs:
+  # This job determines if relevant source/config files changed to skip full deploy on doc-only changes
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      src_or_config_changed: ${{ steps.filter.outputs.src_or_config }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            src_or_config:
+              - 'src/**'
+              - 'tests/**'
+              - 'Dockerfile'
+              - 'requirements.txt'
+              - 'dvc.yaml'
+              - 'dvc.lock'
+              - 'params.yaml'
+              - '.github/workflows/ci.yml'
+
   build_and_test:
     runs-on: ubuntu-latest
+    # This job always runs on push/PR to main to ensure basic tests pass
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,34 +47,42 @@ jobs:
           pip install -r requirements.txt
 
       - name: Set up DVC and Pull Data from GCS
-        # For this job, train.py will run. If MLFLOW_TRACKING_URI is not set here,
-        # train.py will use local mlruns or error if it expects a server and can't connect.
-        # The main goal here is that dvc repro completes and DVC outputs are produced.
         env:
-          MLFLOW_TRACKING_URI: "" # Explicitly make it use local mlruns for this CI training run
-                                  # or a dummy value if train.py handles connection errors gracefully.
-                                  # This prevents CI from trying to connect to a non-existent prod server.
+          # For DVC pulling raw data
+          GOOGLE_APPLICATION_CREDENTIALS: ./gcp_creds_ci.json
         run: |
           echo "Authenticating to Google Cloud (for DVC raw data pull)..."
           echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
-          export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json
+          # GOOGLE_APPLICATION_CREDENTIALS is set above for this script block
           echo "DVC setup: Using GCS remote."
           echo "Pulling DVC tracked data (reviews.csv) from GCS..."
           dvc pull data/raw/reviews.csv -v
           echo "DVC data pull attempt finished."
           ls -lh data/raw/
-          rm -f gcp_creds_ci.json
+          # rm -f gcp_creds_ci.json # Keep creds file if next step also needs it for GCS artifact store
 
-      - name: Reproduce DVC pipeline (generates models for DVC)
+      - name: Reproduce DVC pipeline (Train model, Log to Persistent MLflow)
         env:
-          MLFLOW_TRACKING_URI: "" # As above, ensure train.py handles this gracefully
-                                  # or logs to a temporary local mlruns for this CI step.
+          # This will be used by src/train.py to connect to your persistent MLflow server
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_SERVER_URI_PROD }}
+          # GOOGLE_APPLICATION_CREDENTIALS is still needed if train.py (via MLflow client)
+          # writes artifacts directly to GCS (MLflow server's default-artifact-root).
+          # The gcp_creds_ci.json from previous step should still be available if not removed.
+          # If it was removed, re-export it or ensure the VM's SA used by MLflow server
+          # has direct write access to the artifact GCS bucket.
+          # For robustness, let's ensure GOOGLE_APPLICATION_CREDENTIALS is set for MLflow artifact logging too.
+          GOOGLE_APPLICATION_CREDENTIALS: ./gcp_creds_ci.json # Assumes file from previous step exists
         run: |
-          echo "Attempting to reproduce DVC pipeline..."
+          # If gcp_creds_ci.json was removed in previous step, recreate it:
+          # echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_ci.json
+          # export GOOGLE_APPLICATION_CREDENTIALS=./gcp_creds_ci.json # Ensure it's exported for the DVC process
+
+          echo "Attempting to reproduce DVC pipeline and log to MLflow Server: ${{ env.MLFLOW_TRACKING_URI }}"
           dvc repro -v
           echo "DVC pipeline reproduction attempt finished."
           echo "Listing models directory after DVC repro (for DVC tracking):"
           ls -lh models/
+          rm -f gcp_creds_ci.json # Clean up at the end of steps using it
 
       - name: Lint with Flake8
         run: |
@@ -61,16 +91,19 @@ jobs:
 
       - name: Run Tests with Pytest
         env:
-          PYTHONPATH: ${{ github.workspace }} 
+          PYTHONPATH: ${{ github.workspace }}
+          # MLFLOW_TRACKING_URI: "" # For API tests, we want to force DVC fallback, so unset it here
         run: |
           echo "Running Pytest with PYTHONPATH=${PYTHONPATH}"
+          # Unset MLFLOW_TRACKING_URI for API tests to use DVC fallback if it was set by a previous step
+          # This is handled by the test_api.py fixture now.
           pytest tests/ -v
 
   build_docker_and_push_to_ar:
     name: Build and Push Docker Image to Artifact Registry
-    needs: build_and_test
+    needs: [changes, build_and_test] 
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.src_or_config_changed == 'true'
 
     steps:
       - name: Checkout repository
@@ -89,22 +122,14 @@ jobs:
 
       - name: Set up DVC and Pull Models for Docker Build (for fallback and vectorizer)
         env:
-          # DVC needs GOOGLE_APPLICATION_CREDENTIALS to pull from GCS remote
           GOOGLE_APPLICATION_CREDENTIALS: ./gcp_creds_for_dvc.json
         run: |
           echo '${{ secrets.GCP_SA_KEY }}' > gcp_creds_for_dvc.json
-          
           python -m pip install --upgrade pip
           pip install -r requirements.txt 
-          echo "Finished installing dependencies from requirements.txt."
-          
           python -c "import dvc_gs; print('dvc_gs imported successfully!')" || (pip list && exit 1)
-
-          echo "Pulling DVC-tracked models (sentiment_model.joblib for fallback, tfidf_vectorizer.joblib) for Docker image..."
           mkdir -p models 
-          # Pull both model (for fallback) and vectorizer
           dvc pull models/sentiment_model.joblib models/tfidf_vectorizer.joblib -v
-          echo "Models pulled for Docker build."
           ls -lh models/
           if [ ! -s models/sentiment_model.joblib ] || [ ! -s models/tfidf_vectorizer.joblib ]; then
             echo "ERROR: Model/vectorizer files not pulled correctly by DVC for Docker build."
@@ -143,9 +168,9 @@ jobs:
 
   deploy_to_cloud_run:
     name: Deploy to Google Cloud Run
-    needs: build_docker_and_push_to_ar
+    needs: [changes, build_docker_and_push_to_ar] # Depends on changes and AR push
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.src_or_config_changed == 'true'
 
     steps:
       - name: Authenticate to Google Cloud
@@ -161,6 +186,8 @@ jobs:
           echo "Project ID (from auth): ${{ steps.auth.outputs.project_id }}"
           echo "AR Repo Name: ${{ secrets.AR_REPO_NAME }}"
           echo "Image to deploy: ${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ secrets.AR_REPO_NAME }}/sentiment-analysis-mlops:${{ github.sha }}"
+          echo "MLflow Server URI for Cloud Run: ${{ secrets.MLFLOW_SERVER_URI_PROD || 'Not Set - App will use DVC fallback' }}"
+
 
       - name: Deploy to Google Cloud Run
         id: deploy_cloud_run
@@ -171,8 +198,7 @@ jobs:
           project_id: ${{ steps.auth.outputs.project_id }} 
           image: ${{ secrets.CLOUD_RUN_REGION }}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ secrets.AR_REPO_NAME }}/sentiment-analysis-mlops:${{ github.sha }}
           flags: '--allow-unauthenticated --port=5001'
-          # Pass MLFLOW_TRACKING_URI to Cloud Run service if you have a PROD MLflow server
-          # If MLFLOW_SERVER_URI_PROD secret is not set or empty, app.py will use DVC fallback.
+          # Pass the production MLFLOW_TRACKING_URI to the Cloud Run service
           env_vars: |
             MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_SERVER_URI_PROD || '' }}
 

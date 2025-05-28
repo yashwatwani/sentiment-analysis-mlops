@@ -11,3 +11,5 @@ pytest
 PyYAML 
 requests
 pytest-flask
+pylint>=3.0 # Or just pylint if you always want latest compatible
+astroid>=3.0 # Or just astroid
