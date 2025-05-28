@@ -1,7 +1,7 @@
 schema: '2.0'
 stages:
   train_model:
-    cmd: python src/train.py
+    cmd: python -m src.train
     deps:
     - path: data/raw/reviews.csv
       hash: md5
@@ -13,12 +13,12 @@ stages:
       size: 247
     - path: src/preprocess.py
       hash: md5
-      md5: 94170ab99d251f3b82946fcde957524c
-      size: 1246
+      md5: 99440c93d161f48f7455156489cf875a
+      size: 1273
     - path: src/train.py
       hash: md5
-      md5: 0a53da5b3062b7949d909381a7dfbea6
-      size: 8054
+      md5: 014e7089017740376b64f4ca60e95c34
+      size: 8076
     params:
       params.yaml:
         data_split.random_seed_split: 42
@@ -34,5 +34,5 @@ stages:
       size: 17995
     - path: models/tfidf_vectorizer.joblib
       hash: md5
-      md5: 09d60a4fb4dff76d12ffee85e82e6db4
+      md5: 8309252fe083f2a21cc2ef5ded33ad30
       size: 77575
